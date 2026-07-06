@@ -1,0 +1,188 @@
+using System;
+using System.Linq;
+using System.Net;
+using System.Net.Mail;
+using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using OyemCore.BusinessLayer.Interfaces;
+using OyemCore.DataLayer.Contexts;
+using OyemCore.DataLayer.Entities;
+using Microsoft.Extensions.Logging;
+
+namespace OyemCore.BusinessLayer.Services
+{
+    public class NotificationService : INotificationService
+    {
+        private readonly IServiceScopeFactory _scopeFactory;
+        private readonly ILogger<NotificationService> _logger;
+
+        public NotificationService(IServiceScopeFactory scopeFactory, ILogger<NotificationService> logger)
+        {
+            _scopeFactory = scopeFactory;
+            _logger = logger;
+        }
+
+        public async Task SendMailAsync(string uygulama, string konu, string icerik, string eposta)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var ybsContext = scope.ServiceProvider.GetRequiredService<YbsDbContext>();
+                    var masterContext = scope.ServiceProvider.GetRequiredService<MasterDbContext>();
+
+                    // 1. Veritabanına kayıt at (tb_Mail)
+                    var mailLog = new tb_Mail
+                    {
+                        Gonderen = uygulama,
+                        Konu = konu,
+                        Icerik = icerik,
+                        AlanEPosta = eposta,
+                        Durum = false,
+                        TryCount = 0,
+                        KayitTarih = DateTime.Now
+                    };
+                    ybsContext.tb_Mail.Add(mailLog);
+                    await ybsContext.SaveChangesAsync();
+                    
+                    var mailId = mailLog.MailID;
+
+                    // 2. Tenant Ayarlarını kontrol et
+                    var tenantId = "current"; // Veya Header'dan alınan tenant id. 
+                    // Ancak YbsDbContext connection string'i Tenant'a göre zaten scope'da ayarlanmış durumda.
+                    // MasterContext'te aktif Tenant'ı bulmamız lazım. 
+                    // �??imdilik sadece ilkini çekiyoruz. (Eğer tek tenant ise)
+                    var activeTenant = await masterContext.Tenants.FirstOrDefaultAsync(t => t.IsActive);
+                    
+                    if (activeTenant != null && activeTenant.IsMailService == true)
+                    {
+                        // IsMailService True ise işlemi bırak, arkaplan servisi halledecek
+                        return;
+                    }
+                    
+                    // IsMailService False ise arka planda gönder
+                    _ = Task.Run(async () =>
+                    {
+                        using (var bgScope = _scopeFactory.CreateScope())
+                        {
+                            try
+                            {
+                                var bgYbsContext = bgScope.ServiceProvider.GetRequiredService<YbsDbContext>();
+                                
+                                var mailAyar = await bgYbsContext.tb_Ayarlar.FirstOrDefaultAsync();
+                                if (mailAyar == null) return;
+                                
+                                using (var smtp = new SmtpClient())
+                                {
+                                    smtp.Host = mailAyar.SmtpHost ?? "mail.kurumsaleposta.com";
+                                    smtp.Port = mailAyar.SmtpPort ?? 587;
+                                    smtp.UseDefaultCredentials = false;
+                                    smtp.Credentials = new NetworkCredential(mailAyar.Adres?.Trim(), mailAyar.Sifre?.Trim());
+                                    smtp.EnableSsl = mailAyar.SmtpEnableSsl ?? false;
+                                    smtp.DeliveryMethod = SmtpDeliveryMethod.Network;
+                                    smtp.Timeout = 15000;
+
+                                    using (var mailMsg = new MailMessage())
+                                    {
+                                        mailMsg.From = new MailAddress(mailAyar.Adres?.Trim(), uygulama);
+                                        mailMsg.To.Add(eposta);
+                                        mailMsg.Subject = konu;
+                                        mailMsg.Body = icerik;
+                                        mailMsg.IsBodyHtml = true;
+                                        mailMsg.BodyEncoding = System.Text.Encoding.UTF8;
+                                        mailMsg.SubjectEncoding = System.Text.Encoding.UTF8;
+
+                                        await smtp.SendMailAsync(mailMsg);
+                                    }
+                                }
+
+                                // Başarılıysa durumu güncelle
+                                var bgMailLog = await bgYbsContext.tb_Mail.FindAsync(mailId);
+                                if (bgMailLog != null)
+                                {
+                                    bgMailLog.Durum = true;
+                                    bgMailLog.GonTarih = DateTime.Now;
+                                    await bgYbsContext.SaveChangesAsync();
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Background email sending failed.");
+                            }
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SendMailAsync error");
+            }
+        }
+
+        public async Task SendSmsAsync(string uygulama, string konu, string icerik, string tlf, string adSoyad)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var ybsContext = scope.ServiceProvider.GetRequiredService<YbsDbContext>();
+                    var masterContext = scope.ServiceProvider.GetRequiredService<MasterDbContext>();
+
+                    var smsLog = new tb_Sms
+                    {
+                        Alan = adSoyad,
+                        AlanTlf = tlf,
+                        Gonderen = uygulama,
+                        Icerik = icerik,
+                        Konu = konu,
+                        Durum = false,
+                        TryCount = 0,
+                        KayitTarih = DateTime.Now
+                    };
+                    ybsContext.tb_Sms.Add(smsLog);
+                    await ybsContext.SaveChangesAsync();
+                    
+                    var smsId = smsLog.SmsID;
+
+                    var activeTenant = await masterContext.Tenants.FirstOrDefaultAsync(t => t.IsActive);
+                    if (activeTenant != null && activeTenant.IsSmsService == true)
+                    {
+                        return;
+                    }
+                    
+                    _ = Task.Run(async () =>
+                    {
+                        using (var bgScope = _scopeFactory.CreateScope())
+                        {
+                            try
+                            {
+                                var bgYbsContext = bgScope.ServiceProvider.GetRequiredService<YbsDbContext>();
+                                var ayar = await bgYbsContext.tb_Ayarlar.FirstOrDefaultAsync();
+                                if (ayar == null || string.IsNullOrEmpty(ayar.SmsApiUrl)) return;
+                                
+                                // TODO: SMS API çağrısı yap. Projedeki SMS altyapısına göre burası doldurulmalı.
+
+                                var bgSmsLog = await bgYbsContext.tb_Sms.FindAsync(smsId);
+                                if (bgSmsLog != null)
+                                {
+                                    bgSmsLog.Durum = true;
+                                    bgSmsLog.GonTarih = DateTime.Now;
+                                    await bgYbsContext.SaveChangesAsync();
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Background SMS sending failed.");
+                            }
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "SendSmsAsync error");
+            }
+        }
+    }
+}

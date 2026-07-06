@@ -26,3 +26,8 @@ cfg/
 ## OS metadata
 .DS_Store
 Thumbs.db
+
+# Project-specific custom ignores
+publish/
+httpdocs/HelpDesk/Docs/
+FixEncoding2/
