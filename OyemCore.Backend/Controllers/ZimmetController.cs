@@ -99,7 +99,7 @@ namespace OyemCore.Backend.Controllers
                 {
                     Eposta = user.Eposta,
                     SicilNo = user.SicilNo,
-                    Konu = $"DEMIRBAS_HATA - AygitID: {model.AygitId}",
+                    Konu = $"DEMIRBAS_HATA - AygitID: {model.AygitId} [Mobil]",
                     Aciklama = $"Zimmetli personel hata/itiraz bildirdi: {model.Aciklama}",
                     KayitTar = DateTime.Now
                 });

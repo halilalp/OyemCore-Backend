@@ -486,7 +486,7 @@ namespace OyemCore.BusinessLayer.Services
                 var history = new tb_BelgeTarihce
                 {
                     BelgeKodu = code,
-                    Konu = konu,
+                    Konu = konu + " [Mobil]",
                     Aciklama = aciklama,
                     KayitTar = DateTime.Now
                 };

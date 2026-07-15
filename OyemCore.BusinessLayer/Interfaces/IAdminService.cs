@@ -31,6 +31,8 @@ namespace OyemCore.BusinessLayer.Interfaces
         (bool Success, string Message) SaveTicketCategory(tb_TicketKategori model);
         bool DeleteTicketCategory(int id);
         IEnumerable<object> GetHierarchy();
+        (bool Success, string Message) SaveHierarchy(tb_Hiyerarsi model);
+        bool DeleteHierarchy(int id);
 
         // Mobile Admin Settings extensions
         (bool Success, string Message) UpdateUserPassword(int id, string newPassword);

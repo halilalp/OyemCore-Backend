@@ -171,6 +171,20 @@ namespace OyemCore.BusinessLayer.Services
 
             if (usr == null) throw new InvalidOperationException("Kullanici bulunamadi.");
 
+            // Ticket yetkisi olmayan kullanici yalnizca kendi sirketi adina kayit acabilir.
+            // Guvenlik: sirket kodu istemciden gelen degere degil, kullanicinin kendi sirketine sabitlenir.
+            if (!HasTicketAuthority(usr.AdminBelgeTur))
+            {
+                var ownSirket = _context.tb_Personel.AsNoTracking()
+                    .Where(p => p.SicilNo == usr.SicilNo)
+                    .Select(p => p.SirketKodu)
+                    .FirstOrDefault();
+                if (!string.IsNullOrEmpty(ownSirket))
+                {
+                    ticket.SirketKodu = ownSirket;
+                }
+            }
+
             if (ticket.ID == 0)
             {
                 ticket.KayitTarihi = DateTime.Now;
@@ -385,6 +399,19 @@ namespace OyemCore.BusinessLayer.Services
                     SirketKodu = s.SirketKodu,
                     SirketAdi = s.SirketAdi
                 })
+                .ToList();
+        }
+
+        // Belirtilen sirkete bagli aktif ticket kategorilerini getirir (yeni kayit formu icin).
+        public IEnumerable<object> GetCategories(string sirketKodu)
+        {
+            if (string.IsNullOrEmpty(sirketKodu)) return new List<object>();
+
+            return _context.tb_TicketKategori
+                .AsNoTracking()
+                .Where(k => k.SirketKodu == sirketKodu && k.Durum != false)
+                .OrderBy(k => k.Tanim)
+                .Select(k => new { id = k.ID, tanim = k.Tanim })
                 .ToList();
         }
 
@@ -649,7 +676,7 @@ namespace OyemCore.BusinessLayer.Services
                 var history = new tb_BelgeTarihce
                 {
                     BelgeKodu = code,
-                    Konu = konu,
+                    Konu = konu + " [Mobil]",
                     Aciklama = aciklama,
                     KayitTar = DateTime.Now
                 };

@@ -393,7 +393,7 @@ namespace OyemCore.Backend.Controllers
         /// Helpdesk modülü için base64 formatında dosya yükler.
         /// </summary>
         [HttpPost("upload-file")]
-        public IActionResult UploadFile([FromBody] FileUploadDto dto)
+        public async Task<IActionResult> UploadFile([FromBody] FileUploadDto dto)
         {
             string storageFolder = "";
             try
@@ -403,18 +403,23 @@ namespace OyemCore.Backend.Controllers
                     return BadRequest(new { message = "Dosya verisi gecersiz." });
                 }
 
-                storageFolder = _tenantService.GetCurrentStorageFolder() ?? "";
-                if (string.IsNullOrEmpty(storageFolder))
-                {
-                    storageFolder = Path.Combine(_env.ContentRootPath, "wwwroot");
-                }
-                else if (!Path.IsPathRooted(storageFolder))
-                {
-                    storageFolder = Path.GetFullPath(Path.Combine(_env.ContentRootPath, storageFolder));
-                }
-
                 // Resolve path from the standardized mapping ruleset
                 string modulePath = _tenantService.GetModulPath(dto.Module ?? "");
+                string ext = Path.GetExtension(dto.FileName);
+                string uniqueName = $"{DateTime.Now:yyMMddHHmmssfff}_{Guid.NewGuid().ToString("N").Substring(0, 4)}{ext}";
+
+                if (_tenantService.IsStorageRemote())
+                {
+                    string remoteRelativePath = $"{modulePath}/{uniqueName}".Replace("\\", "/").Replace("//", "/");
+                    var result = await _tenantService.UploadToRemoteStorageAsync(remoteRelativePath, dto.FileBase64);
+                    if (!result.Success)
+                    {
+                        return BadRequest(new { message = $"Webportal'a yükleme başarısız: {result.Error}" });
+                    }
+                    return Ok(new { success = true, filePath = $"/{result.RelativePath}", fileName = dto.FileName });
+                }
+
+                storageFolder = _tenantService.ResolveLocalStorageFolder(_env.ContentRootPath);
 
                 string uploadDir = Path.Combine(storageFolder, modulePath);
                 if (!Directory.Exists(uploadDir))
@@ -422,8 +427,6 @@ namespace OyemCore.Backend.Controllers
                     Directory.CreateDirectory(uploadDir);
                 }
 
-                string ext = Path.GetExtension(dto.FileName);
-                string uniqueName = $"{DateTime.Now:yyMMddHHmmssfff}_{Guid.NewGuid().ToString("N").Substring(0, 4)}{ext}";
                 string fullPath = Path.Combine(uploadDir, uniqueName);
 
                 byte[] fileBytes = Convert.FromBase64String(dto.FileBase64);

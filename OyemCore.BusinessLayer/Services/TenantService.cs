@@ -1,5 +1,9 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Security.Claims;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using OyemCore.DataLayer.Contexts;
@@ -212,6 +216,87 @@ namespace OyemCore.BusinessLayer.Services
             }
 
             return null;
+        }
+
+        public bool IsStorageRemote()
+        {
+            var storageFolder = GetCurrentStorageFolder() ?? "";
+            return storageFolder.StartsWith("http://", System.StringComparison.OrdinalIgnoreCase)
+                || storageFolder.StartsWith("https://", System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        public string ResolveLocalStorageFolder(string contentRootPath)
+        {
+            string storageFolder = GetCurrentStorageFolder() ?? "";
+            if (string.IsNullOrEmpty(storageFolder))
+            {
+                return System.IO.Path.Combine(contentRootPath, "wwwroot");
+            }
+            if (!System.IO.Path.IsPathRooted(storageFolder))
+            {
+                return System.IO.Path.GetFullPath(System.IO.Path.Combine(contentRootPath, storageFolder));
+            }
+            return storageFolder;
+        }
+
+        public async Task<(bool Success, string RelativePath, string Error)> UploadToRemoteStorageAsync(string relativePath, string fileBase64)
+        {
+            var storageFolder = GetCurrentStorageFolder() ?? "";
+            if (string.IsNullOrEmpty(storageFolder))
+            {
+                return (false, null, "Tenant için StorageFolder tanımlı değil.");
+            }
+
+            var apiKey = _configuration["Internal:FileUploadApiKey"];
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                return (false, null, "FileUploadApiKey yapılandırılmamış (appsettings.json > Internal:FileUploadApiKey).");
+            }
+
+            try
+            {
+                using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+
+                var url = $"{storageFolder.TrimEnd('/')}/WebServiceFileUpload.asmx/DosyaYukle";
+                var formData = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["apiKey"] = apiKey,
+                    ["relativePath"] = relativePath,
+                    ["fileBase64"] = fileBase64
+                });
+
+                var response = await client.PostAsync(url, formData);
+                var raw = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return (false, null, $"Webportal HTTP {(int)response.StatusCode}: {raw}");
+                }
+
+                // ASMX HttpPost protokolü, dönen string'i bir XML <string> elemanına sarar.
+                string jsonText = raw;
+                try
+                {
+                    var doc = System.Xml.Linq.XDocument.Parse(raw);
+                    jsonText = doc.Root?.Value ?? raw;
+                }
+                catch
+                {
+                    // Zaten düz JSON gelmişse (SOAP sarmalama yoksa) olduğu gibi kullan.
+                }
+
+                using var jsonDoc = System.Text.Json.JsonDocument.Parse(jsonText);
+                var root = jsonDoc.RootElement;
+                bool success = root.TryGetProperty("success", out var successEl) && successEl.GetBoolean();
+                string returnedPath = root.TryGetProperty("relativePath", out var pathEl) ? pathEl.GetString() : relativePath;
+                string message = root.TryGetProperty("message", out var msgEl) ? msgEl.GetString() : null;
+
+                return success ? (true, returnedPath, null) : (false, null, message ?? "Webportal yükleme başarısız.");
+            }
+            catch (Exception ex)
+            {
+                return (false, null, ex.Message);
+            }
         }
 
         public string GetModulPath(string modul)

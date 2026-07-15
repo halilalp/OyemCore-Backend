@@ -407,7 +407,7 @@ namespace OyemCore.BusinessLayer.Services
                 {
                     Eposta = eposta,
                     SicilNo = sicil,
-                    Konu = konu,
+                    Konu = konu + " [Mobil]",
                     Aciklama = aciklama,
                     KayitTar = DateTime.Now
                 };

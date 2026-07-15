@@ -518,6 +518,43 @@ namespace OyemCore.Backend.Controllers
         }
 
         /// <summary>
+        /// Personel yönetim hiyerarşisi (amir zinciri) kaydını ekler veya günceller.
+        /// </summary>
+        [HttpPost("hierarchy")]
+        public IActionResult SaveHierarchy([FromBody] tb_Hiyerarsi model)
+        {
+            try
+            {
+                if (model == null) return BadRequest(new { message = "Geçersiz veri." });
+                var result = _adminService.SaveHierarchy(model);
+                if (!result.Success) return BadRequest(new { message = result.Message });
+                return Ok(new { success = true, message = result.Message });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Hiyerarsi kaydedilirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        /// <summary>
+        /// Personel yönetim hiyerarşisi kaydını siler.
+        /// </summary>
+        [HttpDelete("hierarchy/{id}")]
+        public IActionResult DeleteHierarchy(int id)
+        {
+            try
+            {
+                var ok = _adminService.DeleteHierarchy(id);
+                if (!ok) return BadRequest(new { message = "Kayıt bulunamadı veya silinemedi." });
+                return Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Hiyerarsi silinirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        /// <summary>
         /// Yapay zeka mod?l? i?in tanimlanmis olan ayarlarin listesini getirir.
         /// </summary>
         /// <returns>Yapay zeka ayarlari listesini d?ner.</returns>

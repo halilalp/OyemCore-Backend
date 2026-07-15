@@ -438,7 +438,7 @@ namespace OyemCore.BusinessLayer.Services
                 {
                     Eposta = currentUser.Eposta,
                     SicilNo = currentUser.SicilNo,
-                    Konu = "LOG",
+                    Konu = "LOG [Mobil]",
                     Aciklama = $"Kullanici Yetkileri G?ncellendi. (KullaniciID:{userId})",
                     KayitTar = DateTime.Now
                 };
@@ -664,6 +664,45 @@ namespace OyemCore.BusinessLayer.Services
                         };
 
             return query.ToList();
+        }
+
+        // Personel yönetim hiyerarşisini (amir zinciri) ekler/günceller.
+        // SicilNo anahtardır: aynı sicile ait kayıt varsa güncellenir, yoksa eklenir.
+        public (bool Success, string Message) SaveHierarchy(tb_Hiyerarsi model)
+        {
+            if (string.IsNullOrWhiteSpace(model.SicilNo)) return (false, "Personel (sicil no) seçilmelidir.");
+
+            var existing = model.HiyerarsiID > 0
+                ? _context.tb_Hiyerarsi.FirstOrDefault(h => h.HiyerarsiID == model.HiyerarsiID)
+                : _context.tb_Hiyerarsi.FirstOrDefault(h => h.SicilNo == model.SicilNo);
+
+            if (existing != null)
+            {
+                existing.SicilNo = model.SicilNo;
+                existing.Eposta = model.Eposta;
+                existing.Amir1 = model.Amir1;
+                existing.Amir2 = model.Amir2;
+                existing.Amir3 = model.Amir3;
+                existing.izin = model.izin;
+            }
+            else
+            {
+                _context.tb_Hiyerarsi.Add(model);
+            }
+
+            _context.SaveChanges();
+            return (true, "Hiyerarşi kaydı başarıyla kaydedildi.");
+        }
+
+        public bool DeleteHierarchy(int id)
+        {
+            var kayit = _context.tb_Hiyerarsi.FirstOrDefault(h => h.HiyerarsiID == id);
+            if (kayit != null)
+            {
+                _context.tb_Hiyerarsi.Remove(kayit);
+                return _context.SaveChanges() > 0;
+            }
+            return false;
         }
 
         private static readonly List<(string Kod, string Tanim, string Aciklama)> StaticDocumentTypes = new List<(string, string, string)>

@@ -94,7 +94,16 @@ namespace OyemCore.BusinessLayer.Services
                     data = data
                 };
 
-                var response = await _httpClient.PostAsJsonAsync("https://exp.host/--/api/v2/push/send", payload);
+                // Türkçe karakterlerin bozulmadan gitmesi için gerçek UTF-8 JSON gönderilir
+                // (varsayılan encoder yerine UnsafeRelaxedJsonEscaping + explicit UTF-8 content).
+                var jsonOptions = new System.Text.Json.JsonSerializerOptions
+                {
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                };
+                var json = System.Text.Json.JsonSerializer.Serialize(payload, jsonOptions);
+                var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.PostAsync("https://exp.host/--/api/v2/push/send", content);
                 if (!response.IsSuccessStatusCode)
                 {
                     var responseBody = await response.Content.ReadAsStringAsync();
@@ -159,7 +168,7 @@ namespace OyemCore.BusinessLayer.Services
                     await SendToUserBySicilNoAsync(
                         leave.KayitSicil,
                         "Amir Onaylari Tamamlandi",
-                        "Izin talebinizin amir onay s?reci tamamlandi, IK islemi bekleniyor.",
+                        "İzin talebinizin amir onay süreci tamamlandı, İK işlemi bekleniyor.",
                         new { type = "izin", screen = "IzinScreen", code = leave.BelgeNo }
                     );
 
@@ -198,7 +207,7 @@ namespace OyemCore.BusinessLayer.Services
                     if (leave == null) return;
 
                     var actionUser = await context.tb_Kullanici.AsNoTracking().FirstOrDefaultAsync(u => u.KullaniciID == actionUserId);
-                    var actionUserName = actionUser?.AdSoyad ?? "Y?netici";
+                    var actionUserName = actionUser?.AdSoyad ?? "Yönetici";
 
                     await SendToUserBySicilNoAsync(
                         leave.KayitSicil,
@@ -301,7 +310,7 @@ namespace OyemCore.BusinessLayer.Services
 
                     string typeLabel = tur == "BAKIM" ? "Bakim" : tur;
                     string title = $"Yeni {typeLabel} Talebi";
-                    string body = $"{requesterName} tarafindan yeni bir {typeLabel.ToLower()} talebi ({talep.TalepKodu}) a?ildi.";
+                    string body = $"{requesterName} tarafından yeni bir {typeLabel.ToLower()} talebi ({talep.TalepKodu}) açıldı.";
 
                     foreach (var manager in managers)
                     {
@@ -438,7 +447,7 @@ namespace OyemCore.BusinessLayer.Services
                     string typeLabel = talep.TalepTurKodu == "BAKIM" ? "Bakim" : talep.TalepTurKodu;
                     string title = $"{typeLabel} Talebiniz Tamamlandi";
                     string body = talep.TalepTurKodu == "BAKIM"
-                        ? $"Bakim talebiniz ({talep.TalepKodu}) tamamlandi, fakat s?recin tamamlanmasi i?in onay vermelisiniz."
+                        ? $"Bakım talebiniz ({talep.TalepKodu}) tamamlandı, fakat sürecin tamamlanması için onay vermelisiniz."
                         : $"'{talep.Konu}' konulu talebiniz ({talep.TalepKodu}) tamamlandi.";
 
                     await SendToUserBySicilNoAsync(
@@ -452,6 +461,193 @@ namespace OyemCore.BusinessLayer.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "PushNotificationService: NotifyTalepClosedAsync failed for ID {ID}", talepId);
+            }
+        }
+
+        // --------------------------------------------------------------------
+        // Talep - İşlem Onay alt-süreci (ör. Bakım talebi kapanmadan önce
+        // kayıt sahibinin/amirin onayına gönderilmesi; onaylanırsa süreç
+        // tamamlanır, reddedilirse sorumluya geri döner)
+        // --------------------------------------------------------------------
+
+        public async Task NotifyTalepOnayaGonderildiAsync(int talepId, string onayciSicil)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    var talep = await context.tb_Talep.AsNoTracking().FirstOrDefaultAsync(t => t.TalepID == talepId);
+                    if (talep == null || string.IsNullOrEmpty(onayciSicil)) return;
+
+                    string typeLabel = talep.TalepTurKodu == "BAKIM" ? "Bakim" : talep.TalepTurKodu;
+
+                    await SendToUserBySicilNoAsync(
+                        onayciSicil,
+                        $"{typeLabel} Talebi Onayınızı Bekliyor",
+                        $"'{talep.Konu}' konulu talep ({talep.TalepKodu}) işlem onayınıza gönderildi.",
+                        new { type = talep.TalepTurKodu, screen = "TalepScreen", code = talep.TalepKodu, id = talep.TalepID }
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyTalepOnayaGonderildiAsync failed for ID {ID}", talepId);
+            }
+        }
+
+        public async Task NotifyTalepOnaylandiAsync(int talepId, int actionUserId)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    var talep = await context.tb_Talep.AsNoTracking().FirstOrDefaultAsync(t => t.TalepID == talepId);
+                    if (talep == null) return;
+
+                    var actionUser = await context.tb_Kullanici.AsNoTracking().FirstOrDefaultAsync(u => u.KullaniciID == actionUserId);
+                    var actionUserName = actionUser?.AdSoyad ?? "Yetkili";
+                    string typeLabel = talep.TalepTurKodu == "BAKIM" ? "Bakim" : talep.TalepTurKodu;
+
+                    if (!string.IsNullOrEmpty(talep.SorumluSicil))
+                    {
+                        await SendToUserBySicilNoAsync(
+                            talep.SorumluSicil,
+                            $"{typeLabel} Talebi Onayı Verildi",
+                            $"'{talep.Konu}' konulu talep ({talep.TalepKodu}) için işlem onayı {actionUserName} tarafından verildi.",
+                            new { type = talep.TalepTurKodu, screen = "TalepScreen", code = talep.TalepKodu, id = talep.TalepID }
+                        );
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyTalepOnaylandiAsync failed for ID {ID}", talepId);
+            }
+        }
+
+        public async Task NotifyTalepReddedildiAsync(int talepId, int actionUserId, string sebep)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    var talep = await context.tb_Talep.AsNoTracking().FirstOrDefaultAsync(t => t.TalepID == talepId);
+                    if (talep == null) return;
+
+                    var actionUser = await context.tb_Kullanici.AsNoTracking().FirstOrDefaultAsync(u => u.KullaniciID == actionUserId);
+                    var actionUserName = actionUser?.AdSoyad ?? "Yetkili";
+                    string typeLabel = talep.TalepTurKodu == "BAKIM" ? "Bakim" : talep.TalepTurKodu;
+
+                    if (!string.IsNullOrEmpty(talep.SorumluSicil))
+                    {
+                        await SendToUserBySicilNoAsync(
+                            talep.SorumluSicil,
+                            $"{typeLabel} Talebi Onayı Reddedildi",
+                            $"'{talep.Konu}' konulu talep ({talep.TalepKodu}) {actionUserName} tarafından reddedildi. Sebep: {sebep}",
+                            new { type = talep.TalepTurKodu, screen = "TalepScreen", code = talep.TalepKodu, id = talep.TalepID }
+                        );
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyTalepReddedildiAsync failed for ID {ID}", talepId);
+            }
+        }
+
+        // --------------------------------------------------------------------
+        // Tedarikçi Değerlendirme
+        // --------------------------------------------------------------------
+
+        public async Task NotifyNewTedarikciDegerlendirmeAsync(string belgeNo)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    var deg = await context.tb_TedDeg.AsNoTracking().FirstOrDefaultAsync(d => d.BelgeNo == belgeNo);
+                    if (deg == null) return;
+
+                    var requesterName = await context.tb_Personel
+                        .AsNoTracking()
+                        .Where(p => p.SicilNo == deg.KayitSicil)
+                        .Select(p => p.AdSoyad)
+                        .FirstOrDefaultAsync() ?? deg.KayitSicil;
+
+                    // Sorumlu bir kişi ataması olmadığı için, TEDARIKCI veya ADMIN yetkili kullanıcılar bilgilendirilir.
+                    var yetkililer = await context.tb_Kullanici
+                        .AsNoTracking()
+                        .Where(u => u.AdminBelgeTur != null &&
+                                    (u.AdminBelgeTur.ToUpper().Contains("TEDARIKCI") || u.AdminBelgeTur.ToUpper().Contains("ADMIN")))
+                        .ToListAsync();
+
+                    foreach (var yetkili in yetkililer)
+                    {
+                        if (yetkili.SicilNo == deg.KayitSicil) continue;
+                        await SendToUserBySicilNoAsync(
+                            yetkili.SicilNo,
+                            "Yeni Tedarikçi Değerlendirme Talebi",
+                            $"{requesterName} tarafından yeni bir tedarikçi değerlendirme kaydı ({deg.BelgeNo}) açıldı.",
+                            new { type = "tedarikci", screen = "TedarikciScreen", code = deg.BelgeNo }
+                        );
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyNewTedarikciDegerlendirmeAsync failed for BelgeNo {BelgeNo}", belgeNo);
+            }
+        }
+
+        public async Task NotifyTedarikciDegerlendirmeCompletedAsync(string belgeNo)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    var deg = await context.tb_TedDeg.AsNoTracking().FirstOrDefaultAsync(d => d.BelgeNo == belgeNo);
+                    if (deg == null || string.IsNullOrEmpty(deg.KayitSicil)) return;
+
+                    await SendToUserBySicilNoAsync(
+                        deg.KayitSicil,
+                        "Tedarikçi Değerlendirmeniz Tamamlandı",
+                        $"Talep ettiğiniz tedarikçi değerlendirmesi ({deg.BelgeNo}) tamamlandı.",
+                        new { type = "tedarikci", screen = "TedarikciScreen", code = deg.BelgeNo }
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyTedarikciDegerlendirmeCompletedAsync failed for BelgeNo {BelgeNo}", belgeNo);
+            }
+        }
+
+        public async Task NotifyTedarikciDegerlendirmeCancelledAsync(string belgeNo)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    var deg = await context.tb_TedDeg.AsNoTracking().FirstOrDefaultAsync(d => d.BelgeNo == belgeNo);
+                    if (deg == null || string.IsNullOrEmpty(deg.KayitSicil)) return;
+
+                    await SendToUserBySicilNoAsync(
+                        deg.KayitSicil,
+                        "Tedarikçi Değerlendirmeniz İptal Edildi",
+                        $"Talep ettiğiniz tedarikçi değerlendirmesi ({deg.BelgeNo}) iptal edildi.",
+                        new { type = "tedarikci", screen = "TedarikciScreen", code = deg.BelgeNo }
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyTedarikciDegerlendirmeCancelledAsync failed for BelgeNo {BelgeNo}", belgeNo);
             }
         }
 
@@ -480,8 +676,8 @@ namespace OyemCore.BusinessLayer.Services
 
                     await SendToUserBySicilNoAsync(
                         log.PersonelSicil,
-                        "?zerinize Yeni Zimmet Atandi",
-                        $"{senderName} tarafindan ?zerinize '{asset.Tanim}' demirbasi zimmetlendi.",
+                        "Üzerinize Yeni Zimmet Atandı",
+                        $"{senderName} tarafından üzerinize '{asset.Tanim}' demirbaşı zimmetlendi.",
                         new { type = "zimmet", screen = "ZimmetlerimScreen", id = log.AygitID }
                     );
                 }
@@ -511,7 +707,7 @@ namespace OyemCore.BusinessLayer.Services
                     await SendToUserBySicilNoAsync(
                         log.PersonelSicil,
                         "Zimmet Iade Alindi",
-                        $"?zerinizdeki '{asset.Tanim}' demirbasi {receiverName} tarafindan iade alindi ve zimmetiniz d?s?r?ld?.",
+                        $"Üzerinizdeki '{asset.Tanim}' demirbaşı {receiverName} tarafından iade alındı ve zimmetiniz düşürüldü.",
                         new { type = "zimmet", screen = "ZimmetlerimScreen", id = log.AygitID }
                     );
                 }
@@ -553,7 +749,7 @@ namespace OyemCore.BusinessLayer.Services
                         await SendToUserBySicilNoAsync(
                             admin.SicilNo,
                             "Yeni Destek Talebi (Ticket)",
-                            $"{requesterName} tarafindan '{ticket.Baslik}' baslikli yeni bir ticket ({ticket.TakipKodu}) a?ildi.",
+                            $"{requesterName} tarafından '{ticket.Baslik}' başlıklı yeni bir ticket ({ticket.TakipKodu}) açıldı.",
                             new { type = "ticket", screen = "TicketScreen", id = ticket.ID }
                         );
                     }

@@ -27,15 +27,30 @@ namespace OyemCore.Backend.Controllers
         {
             try
             {
-                string storageFolder = _tenantService.GetCurrentStorageFolder() ?? "";
-                if (string.IsNullOrEmpty(storageFolder))
+                // StorageFolder bir URL de olabilir (örn. "https://oyemsoft.com/"). Bu durumda dosya
+                // yerelde aranmaz; StorageFolder + ModulPath (+ fileName) birleştirilip o adrese yönlendirilir.
+                if (_tenantService.IsStorageRemote())
                 {
-                    storageFolder = Path.Combine(_env.ContentRootPath, "wwwroot");
+                    string remoteBase = _tenantService.GetCurrentStorageFolder() ?? "";
+                    string subPath;
+                    if (!string.IsNullOrEmpty(relativePath))
+                    {
+                        subPath = relativePath.Replace("..", "").TrimStart('/', '\\').Replace('\\', '/');
+                    }
+                    else if (!string.IsNullOrEmpty(module) && !string.IsNullOrEmpty(fileName))
+                    {
+                        string modulePath = _tenantService.GetModulPath(module).Replace('\\', '/').Trim('/');
+                        subPath = $"{modulePath}/{fileName}";
+                    }
+                    else
+                    {
+                        return BadRequest("relativePath veya module + fileName parametreleri gereklidir.");
+                    }
+
+                    return Redirect($"{remoteBase.TrimEnd('/')}/{subPath}");
                 }
-                else if (!Path.IsPathRooted(storageFolder))
-                {
-                    storageFolder = Path.GetFullPath(Path.Combine(_env.ContentRootPath, storageFolder));
-                }
+
+                string storageFolder = _tenantService.ResolveLocalStorageFolder(_env.ContentRootPath);
 
                 string fullPath = "";
 

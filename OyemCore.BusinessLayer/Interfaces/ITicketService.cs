@@ -13,6 +13,7 @@ namespace OyemCore.BusinessLayer.Interfaces
         bool AssignTicket(int kullaniciID, int ticketID, string sicilNo);
         object GetTicketDetail(int ticketID);
         IEnumerable<Company> GetCompanies();
+        IEnumerable<object> GetCategories(string sirketKodu);
         IEnumerable<Personel> GetPersonels();
         bool SaveComment(int kullaniciID, int ticketID, string aciklama);
         bool SaveFile(int ticketID, string dosyaAdi, string dosyaYolu, string dosyaTipi);

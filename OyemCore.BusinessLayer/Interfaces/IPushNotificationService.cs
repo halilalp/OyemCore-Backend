@@ -19,6 +19,16 @@ namespace OyemCore.BusinessLayer.Interfaces
         Task NotifyTalepGelismeAsync(int talepId, int actionUserId, string description);
         Task NotifyTalepClosedAsync(int talepId);
 
+        // Talep - İşlem Onay alt-süreci
+        Task NotifyTalepOnayaGonderildiAsync(int talepId, string onayciSicil);
+        Task NotifyTalepOnaylandiAsync(int talepId, int actionUserId);
+        Task NotifyTalepReddedildiAsync(int talepId, int actionUserId, string sebep);
+
+        // Tedarikçi Değerlendirme
+        Task NotifyNewTedarikciDegerlendirmeAsync(string belgeNo);
+        Task NotifyTedarikciDegerlendirmeCompletedAsync(string belgeNo);
+        Task NotifyTedarikciDegerlendirmeCancelledAsync(string belgeNo);
+
         // Asset/Zimmet Operations
         Task NotifyAssetAssignedAsync(int aygitPersonelId);
         Task NotifyAssetReturnedAsync(int aygitPersonelId, int actionUserId);

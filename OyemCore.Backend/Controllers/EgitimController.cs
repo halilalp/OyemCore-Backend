@@ -107,7 +107,7 @@ namespace OyemCore.Backend.Controllers
         }
 
         [HttpPost("upload-file")]
-        public IActionResult UploadFile([FromBody] FileUploadDto dto)
+        public async Task<IActionResult> UploadFile([FromBody] FileUploadDto dto)
         {
             string storageFolder = "";
             try
@@ -115,19 +115,25 @@ namespace OyemCore.Backend.Controllers
                 if (dto == null || string.IsNullOrEmpty(dto.FileBase64) || string.IsNullOrEmpty(dto.FileName))
                     return BadRequest(new { message = "Dosya verisi gecersiz." });
 
-                storageFolder = _tenantService.GetCurrentStorageFolder() ?? "";
-                if (string.IsNullOrEmpty(storageFolder))
-                    storageFolder = Path.Combine(_env.ContentRootPath, "wwwroot");
-                else if (!Path.IsPathRooted(storageFolder))
-                    storageFolder = Path.GetFullPath(Path.Combine(_env.ContentRootPath, storageFolder));
-
                 string modulePath = _tenantService.GetModulPath("HABERDOCS");
+                string ext = Path.GetExtension(dto.FileName);
+                string uniqueName = $"{DateTime.Now:yyMMddHHmmssfff}_{Guid.NewGuid().ToString("N").Substring(0, 4)}{ext}";
+
+                if (_tenantService.IsStorageRemote())
+                {
+                    string remoteRelativePath = $"{modulePath}/{uniqueName}".Replace("\\", "/").Replace("//", "/");
+                    var uploadResult = await _tenantService.UploadToRemoteStorageAsync(remoteRelativePath, dto.FileBase64);
+                    if (!uploadResult.Success)
+                        return BadRequest(new { message = $"Webportal'a yükleme başarısız: {uploadResult.Error}" });
+                    return Ok(new { success = true, filePath = uniqueName, fileName = dto.FileName });
+                }
+
+                storageFolder = _tenantService.ResolveLocalStorageFolder(_env.ContentRootPath);
+
                 string uploadDir = Path.Combine(storageFolder, modulePath);
                 if (!Directory.Exists(uploadDir))
                     Directory.CreateDirectory(uploadDir);
 
-                string ext = Path.GetExtension(dto.FileName);
-                string uniqueName = $"{DateTime.Now:yyMMddHHmmssfff}_{Guid.NewGuid().ToString("N").Substring(0, 4)}{ext}";
                 string fullPath = Path.Combine(uploadDir, uniqueName);
 
                 byte[] fileBytes = Convert.FromBase64String(dto.FileBase64);

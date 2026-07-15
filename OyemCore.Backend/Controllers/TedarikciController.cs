@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using OyemCore.DataLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
+using OyemCore.BusinessLayer.Interfaces;
 using System.Text.Json;
 
 namespace OyemCore.Backend.Controllers
@@ -17,10 +18,12 @@ namespace OyemCore.Backend.Controllers
     public class TedarikciController : ControllerBase
     {
         private readonly IYbsDbContext _context;
+        private readonly IPushNotificationService _pushNotificationService;
 
-        public TedarikciController(IYbsDbContext context)
+        public TedarikciController(IYbsDbContext context, IPushNotificationService pushNotificationService)
         {
             _context = context;
+            _pushNotificationService = pushNotificationService;
         }
 
         private int GetCurrentUserId()
@@ -353,7 +356,7 @@ namespace OyemCore.Backend.Controllers
                                     Aciklama = $"Eski Deger: {eskiDeger} - Yeni Deger: {deger} (Islem Yapan: {currentUser.AdSoyad})",
                                     BelgeKodu = model.BelgeNo,
                                     KayitTar = DateTime.Now,
-                                    Konu = $"{kod} Kodlu Parametre Degeri Degisti."
+                                    Konu = $"{kod} Kodlu Parametre Degeri Degisti. [Mobil]"
                                 });
                                 kp.IslemTar = DateTime.Now;
                                 kp.IslemYapan = currentUser.SicilNo;
@@ -381,7 +384,7 @@ namespace OyemCore.Backend.Controllers
                                     Aciklama = $"Eski Deger: {eskiDeger} - Yeni Deger: [Bos] (Islem Yapan: {currentUser.AdSoyad})",
                                     BelgeKodu = model.BelgeNo,
                                     KayitTar = DateTime.Now,
-                                    Konu = $"{kod} Kodlu Parametre Degeri Degisti."
+                                    Konu = $"{kod} Kodlu Parametre Degeri Degisti. [Mobil]"
                                 });
                             }
                             kp.Deger = null;
@@ -411,7 +414,7 @@ namespace OyemCore.Backend.Controllers
                         Aciklama = $"Eski Deger: {eskiBelge} - Yeni Deger: {model.BelgeDurum} (Islem Yapan: {currentUser.AdSoyad})",
                         BelgeKodu = model.BelgeNo,
                         KayitTar = DateTime.Now,
-                        Konu = "Belge Durumu Degisti."
+                        Konu = "Belge Durumu Degisti. [Mobil]"
                     });
                 }
 
@@ -430,7 +433,7 @@ namespace OyemCore.Backend.Controllers
                         Aciklama = $"(Ist. Tes. Tar.) Eski: {eskiistTar} - Yeni: {model.IstTar} * (Ger?. Tes. Tar.) Eski: {eskigerTar} - Yeni: {model.GerTar} (Islem Yapan: {currentUser.AdSoyad})",
                         BelgeKodu = model.BelgeNo,
                         KayitTar = DateTime.Now,
-                        Konu = "Istenen/Ger?eklesen Teslim Tarihi Degisti."
+                        Konu = "Istenen/Ger?eklesen Teslim Tarihi Degisti. [Mobil]"
                     });
                 }
 
@@ -479,7 +482,7 @@ namespace OyemCore.Backend.Controllers
                         Aciklama = $"Eski Deger: {eskiRisk} - Yeni Deger: {model.RiskDurum} (Islem Yapan: {currentUser.AdSoyad})",
                         BelgeKodu = model.BelgeNo,
                         KayitTar = DateTime.Now,
-                        Konu = "Risk Durumu Degisti."
+                        Konu = "Risk Durumu Degisti. [Mobil]"
                     });
                 }
                 deg.RiskDurum = string.IsNullOrEmpty(model.RiskDurum) ? null : model.RiskDurum;
@@ -540,7 +543,7 @@ namespace OyemCore.Backend.Controllers
                 _context.tb_BelgeTarihce.Add(new tb_BelgeTarihce
                 {
                     BelgeKodu = belgeNo,
-                    Konu = "Tedarik?i Degerlendirme Islemi Tamamlandi.",
+                    Konu = "Tedarik?i Degerlendirme Islemi Tamamlandi. [Mobil]",
                     Aciklama = $"Islem Yapan: {currentUser.AdSoyad}",
                     KayitTar = DateTime.Now
                 });
@@ -581,6 +584,8 @@ namespace OyemCore.Backend.Controllers
 
                 _context.SaveChanges();
 
+                _ = _pushNotificationService.NotifyTedarikciDegerlendirmeCompletedAsync(belgeNo);
+
                 return Ok(new { success = true, message = "Degerlendirme basariyla tamamlandi." });
             }
             catch (Exception ex)
@@ -607,12 +612,14 @@ namespace OyemCore.Backend.Controllers
                 _context.tb_BelgeTarihce.Add(new tb_BelgeTarihce
                 {
                     BelgeKodu = belgeNo,
-                    Konu = "Tedarik?i Degerlendirme Islemi Iptal Edildi.",
+                    Konu = "Tedarik?i Degerlendirme Islemi Iptal Edildi. [Mobil]",
                     Aciklama = $"Islem Yapan: {currentUser.AdSoyad}",
                     KayitTar = DateTime.Now
                 });
 
                 _context.SaveChanges();
+
+                _ = _pushNotificationService.NotifyTedarikciDegerlendirmeCancelledAsync(belgeNo);
 
                 return Ok(new { success = true, message = "Degerlendirme basariyla iptal edildi." });
             }
@@ -688,12 +695,14 @@ namespace OyemCore.Backend.Controllers
                 _context.tb_BelgeTarihce.Add(new tb_BelgeTarihce
                 {
                     BelgeKodu = talep.BelgeNo,
-                    Konu = "Tedarik?i Degerlendirme Kaydi Olusturuldu.",
+                    Konu = "Tedarik?i Degerlendirme Kaydi Olusturuldu. [Mobil]",
                     Aciklama = $"Kayit Sahibi: {currentUser.AdSoyad}",
                     KayitTar = DateTime.Now
                 });
 
                 _context.SaveChanges();
+
+                _ = _pushNotificationService.NotifyNewTedarikciDegerlendirmeAsync(talep.BelgeNo);
 
                 return Ok(new { success = true, message = "Degerlendirme kaydi basariyla olusturuldu.", belgeNo = talep.BelgeNo });
             }

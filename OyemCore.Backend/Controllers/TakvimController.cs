@@ -43,17 +43,28 @@ namespace OyemCore.Backend.Controllers
                     konu = e.Konu ?? ""
                 }).ToList();
 
-                string storageFolder = _tenantService.GetCurrentStorageFolder() ?? "";
-                if (string.IsNullOrEmpty(storageFolder))
-                    storageFolder = Path.Combine(_env.ContentRootPath, "wwwroot");
-                else if (!Path.IsPathRooted(storageFolder))
-                    storageFolder = Path.GetFullPath(Path.Combine(_env.ContentRootPath, storageFolder));
+                string json = System.Text.Json.JsonSerializer.Serialize(jsonData, new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
+
+                if (_tenantService.IsStorageRemote())
+                {
+                    // Uzak (URL) storage'lı tenantlarda JSON, webportal'ın kendi takvimini
+                    // beslemeye devam edebilmesi için upload webservice'i ile webportal'a yazılır.
+                    // Mobil ana sayfa (GetHomeEvents) bu tenantlarda zaten doğrudan DB'den okur.
+                    string base64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(json));
+                    var result = _tenantService.UploadToRemoteStorageAsync("Dashboard/json/data.json", base64).GetAwaiter().GetResult();
+                    if (!result.Success)
+                    {
+                        Console.WriteLine($"TakvimController.SyncCalendarJson remote upload failed: {result.Error}");
+                    }
+                    return;
+                }
+
+                string storageFolder = _tenantService.ResolveLocalStorageFolder(_env.ContentRootPath);
 
                 string jsonFolder = Path.Combine(storageFolder, "Dashboard", "json");
                 Directory.CreateDirectory(jsonFolder);
 
                 string jsonPath = Path.Combine(jsonFolder, "data.json");
-                string json = System.Text.Json.JsonSerializer.Serialize(jsonData, new System.Text.Json.JsonSerializerOptions { WriteIndented = false });
                 System.IO.File.WriteAllText(jsonPath, json, System.Text.Encoding.UTF8);
             }
             catch (Exception ex)
@@ -79,15 +90,11 @@ namespace OyemCore.Backend.Controllers
         {
             try
             {
-                string storageFolder = _tenantService.GetCurrentStorageFolder() ?? "";
-                if (string.IsNullOrEmpty(storageFolder))
-                    storageFolder = Path.Combine(_env.ContentRootPath, "wwwroot");
-                else if (!Path.IsPathRooted(storageFolder))
-                    storageFolder = Path.GetFullPath(Path.Combine(_env.ContentRootPath, storageFolder));
+                string jsonPath = _tenantService.IsStorageRemote()
+                    ? null
+                    : Path.Combine(_tenantService.ResolveLocalStorageFolder(_env.ContentRootPath), "Dashboard", "json", "data.json");
 
-                string jsonPath = Path.Combine(storageFolder, "Dashboard", "json", "data.json");
-
-                if (!System.IO.File.Exists(jsonPath))
+                if (jsonPath == null || !System.IO.File.Exists(jsonPath))
                 {
                     // JSON henüz oluşturulmamışsa DB'den fallback
                     var dbStart = !string.IsNullOrEmpty(startDate) && DateTime.TryParse(startDate, out var s) ? s : (DateTime?)null;
