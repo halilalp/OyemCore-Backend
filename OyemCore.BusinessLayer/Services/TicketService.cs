@@ -560,9 +560,18 @@ namespace OyemCore.BusinessLayer.Services
             // 3. Save silindi history
             BelgeTarihceKaydet(t.TakipKodu, "Ticket Silindi", $"Ticket silindi. (Yapan: {currentUsr.AdSoyad})");
 
+            // Silmeden önce bildirim için gerekli bilgileri yakala
+            string kayitSicil = t.KayitSicilNo;
+            string sorumluSicil = t.SorumluSicilNo;
+            string takipKodu = t.TakipKodu;
+            string baslik = t.Baslik;
+
             // 4. Delete ticket
             _context.tb_Ticket.Remove(t);
             _context.SaveChanges();
+
+            // 5. Kayıt eden ve sorumluya silme bildirimi (fire-and-forget)
+            _ = _pushNotificationService.NotifyTicketDeletedAsync(kayitSicil, sorumluSicil, takipKodu, baslik, currentUsr.AdSoyad, currentUsr.SicilNo);
 
             return "1";
         }

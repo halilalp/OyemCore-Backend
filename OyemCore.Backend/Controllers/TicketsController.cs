@@ -177,12 +177,15 @@ namespace OyemCore.Backend.Controllers
             try
             {
                 int userId = GetCurrentUserId();
+                if (request == null || string.IsNullOrWhiteSpace(request.Aciklama))
+                    return BadRequest(new { message = "Gelişme açıklaması boş olamaz." });
                 bool success = _ticketService.SaveComment(userId, id, request.Aciklama);
                 return Ok(new { success });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = ex.Message });
+                var detay = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return BadRequest(new { message = detay });
             }
         }
 

@@ -38,6 +38,7 @@ namespace OyemCore.BusinessLayer.Interfaces
         Task NotifyTicketSorumluAtandiAsync(int ticketId);
         Task NotifyTicketStatusChangedAsync(int ticketId, string oldStatus, string newStatus, int actionUserId);
         Task NotifyTicketGelismeAsync(int ticketId, int actionUserId, string comment);
+        Task NotifyTicketDeletedAsync(string kayitSicil, string sorumluSicil, string takipKodu, string baslik, string silenAdSoyad, string silenSicil);
     }
 }
 

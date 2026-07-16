@@ -925,6 +925,28 @@ namespace OyemCore.BusinessLayer.Services
                 _logger.LogError(ex, "PushNotificationService: NotifyTicketGelismeAsync failed for ID {ID}", ticketId);
             }
         }
+
+        // Ticket silindiğinde: kayıt eden ve sorumluya bildirim (silen kişi hariç).
+        // Ticket kaydı silindiği için gerekli bilgiler doğrudan parametreyle gelir.
+        public async Task NotifyTicketDeletedAsync(string kayitSicil, string sorumluSicil, string takipKodu, string baslik, string silenAdSoyad, string silenSicil)
+        {
+            try
+            {
+                string title = "Destek Talebi Silindi (Ticket)";
+                string body = $"'{baslik}' başlıklı destek talebi ({takipKodu}) {silenAdSoyad} tarafından silindi.";
+                var data = new { type = "ticket", screen = "TicketScreen" };
+
+                if (!string.IsNullOrEmpty(kayitSicil) && kayitSicil != silenSicil)
+                    await SendToUserBySicilNoAsync(kayitSicil, title, body, data);
+
+                if (!string.IsNullOrEmpty(sorumluSicil) && sorumluSicil != silenSicil && sorumluSicil != kayitSicil)
+                    await SendToUserBySicilNoAsync(sorumluSicil, title, body, data);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyTicketDeletedAsync failed for {Kod}", takipKodu);
+            }
+        }
     }
 }
 
