@@ -45,6 +45,7 @@ namespace OyemCore.DataLayer.Contexts
         public DbSet<tb_EgitimKategori> tb_EgitimKategori { get; set; }
         public DbSet<tb_Departman> tb_Departman { get; set; }
         public DbSet<tb_Unvan> tb_Unvan { get; set; }
+        public DbSet<SpBakimTalep> SpBakimTalep { get; set; }
         public DbSet<tb_BakimPerKontrol> tb_BakimPerKontrol { get; set; }
         public DbSet<tb_BakimPerKontrolDetay> tb_BakimPerKontrolDetay { get; set; }
         public DbSet<tb_BakimPerKontrolSarfiyat> tb_BakimPerKontrolSarfiyat { get; set; }
@@ -108,6 +109,7 @@ namespace OyemCore.DataLayer.Contexts
             modelBuilder.Entity<tb_EgitimKategori>().ToTable("tb_EgitimKategori").HasKey(e => e.KategoriID);
             modelBuilder.Entity<tb_Departman>().ToTable("tb_Departman").HasKey(e => e.Kod);
             modelBuilder.Entity<tb_Unvan>().ToTable("tb_Unvan").HasKey(e => e.UnvanKodu);
+            modelBuilder.Entity<SpBakimTalep>().HasNoKey().ToView(null);
             modelBuilder.Entity<tb_BakimPerKontrol>().ToTable("tb_BakimPerKontrol").HasKey(e => e.ID);
             modelBuilder.Entity<tb_BakimPerKontrolDetay>().ToTable("tb_BakimPerKontrolDetay").HasKey(e => e.ID);
             modelBuilder.Entity<tb_BakimPerKontrolSarfiyat>().ToTable("tb_BakimPerKontrolSarfiyat").HasKey(e => e.ID);

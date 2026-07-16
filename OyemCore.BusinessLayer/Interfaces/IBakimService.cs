@@ -28,5 +28,7 @@ namespace OyemCore.BusinessLayer.Interfaces
         BakimDropdownsDto GetBakimDropdowns(string sicilNo, string adminBelgeTur);
         IEnumerable<PersonelPerformansRaporuDto> GetPersonelPerformansRaporu(string yil, string ay, string sirket);
         IEnumerable<BakimDashboardStatsDto> GetBakimDashboardStats(string yillar, string sirket);
+        object GetDashboardOzet(string sirketKodu);
+        object GetBakimHelpDeskPerformans(string yil, string ay, string sirket);
     }
 }

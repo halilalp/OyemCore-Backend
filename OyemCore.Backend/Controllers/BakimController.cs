@@ -502,5 +502,33 @@ namespace OyemCore.Backend.Controllers
                 return BadRequest(new { message = ex.Message });
             }
         }
+
+        // Referans WebServiceBakimPlani.DashboardOzetGetir birebir (planlı/periyodik özet)
+        [HttpGet("dashboard-ozet")]
+        public IActionResult GetDashboardOzet([FromQuery] string sirket = "")
+        {
+            try
+            {
+                return Ok(_bakimService.GetDashboardOzet(sirket));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
+        // Referans WebServiceBakimRapor.PersonelPerformansRaporuGetir birebir (Bakım HelpDesk)
+        [HttpGet("rapor/performans")]
+        public IActionResult GetBakimPerformans([FromQuery] string yil = "", [FromQuery] string ay = "", [FromQuery] string sirket = "")
+        {
+            try
+            {
+                return Ok(_bakimService.GetBakimHelpDeskPerformans(yil, ay, sirket));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
     }
 }

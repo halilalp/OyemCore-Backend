@@ -745,7 +745,7 @@ namespace OyemCore.BusinessLayer.Services
                     int mechanicCount = monthly.Count(o => o.KategoriTanim.ToUpper().Contains("MEKANIK"));
 
                     double totalMttrMinutes = monthly.Where(o => o.Durum == true && o.MttrTamamSure.HasValue).Sum(o => (double)o.MttrTamamSure.Value);
-                    double downtimeMinutes = monthly.Where(o => o.UretimDurusu != "H" && o.MttrTamamSure.HasValue).Sum(o => (double)o.MttrTamamSure.Value);
+                    double downtimeMinutes = monthly.Where(o => o.UretimDurusu == "E" && o.MttrTamamSure.HasValue).Sum(o => (double)o.MttrTamamSure.Value);
 
                     double daysInMonth = DateTime.DaysInMonth(year, month);
                     double totalHoursInMonth = daysInMonth * 24.0;
@@ -771,6 +771,129 @@ namespace OyemCore.BusinessLayer.Services
             }
 
             return results;
+        }
+
+        // Referans WebServiceBakimPlani.DashboardOzetGetir ile birebir (planlı/periyodik bakım özeti).
+        public object GetDashboardOzet(string sirketKodu)
+        {
+            var bakimDict = _context.tb_TalepBakim.AsNoTracking().Where(b => b.SirketKodu != null)
+                .GroupBy(b => b.TalepKodu).ToDictionary(g => g.Key, g => g.First().SirketKodu);
+            bool SirketOk(string talepKodu) => string.IsNullOrEmpty(sirketKodu) || (bakimDict.TryGetValue(talepKodu, out var s) && s == sirketKodu);
+
+            var onayKodlari = _context.tb_TalepAmir.AsNoTracking().Where(a => a.Durum == null && a.IslemTur == "ONAY").Select(a => a.TalepKodu).ToHashSet();
+            var persDict = _context.tb_Personel.AsNoTracking().GroupBy(p => p.SicilNo).ToDictionary(g => g.Key, g => g.First().AdSoyad);
+
+            var bakimTaleps = _context.tb_Talep.AsNoTracking().Where(t => t.TalepTurKodu == "BAKIM").ToList();
+
+            int bekleyenTalepSayisi = bakimTaleps.Count(t => t.Durum == false && !onayKodlari.Contains(t.TalepKodu) && SirketOk(t.TalepKodu));
+
+            var acikIsEmriAll = _context.tb_TalepIsEmri.AsNoTracking().Where(o => o.Durum == null).ToList().Where(o => SirketOk(o.TalepKodu)).ToList();
+            int acikIsEmriSayisi = acikIsEmriAll.Count;
+            var acikIsEmirleri = acikIsEmriAll.OrderByDescending(o => o.KayitTar).Take(10)
+                .Select(o => new { TalepNo = o.TalepKodu, IsEmriNo = o.TalepIsEmriID, KayitTarihi = o.KayitTar.HasValue ? o.KayitTar.Value.ToString("dd.MM.yyyy") : "-" }).ToList();
+
+            var onayTaleps = bakimTaleps.Where(t => onayKodlari.Contains(t.TalepKodu) && SirketOk(t.TalepKodu)).ToList();
+            int onayBekleyenSayisi = onayTaleps.Count;
+            var onayBekleyenler = onayTaleps.OrderByDescending(t => t.KayitTar).Take(10)
+                .Select(t => new { TalepNo = t.TalepKodu, KayitPersoneli = persDict.TryGetValue(t.KayitSicil ?? "", out var n) ? n : (t.KayitSicil ?? ""), Tarih = t.KayitTar.HasValue ? t.KayitTar.Value.ToString("dd.MM.yyyy") : "-" }).ToList();
+
+            var firstDay = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            int tamamlananTalepSayisi = bakimTaleps.Count(t => t.Durum == true && t.KapanmaTar >= firstDay && SirketOk(t.TalepKodu));
+
+            return new
+            {
+                BekleyenTalepSayisi = bekleyenTalepSayisi,
+                AcikIsEmirleri = acikIsEmirleri,
+                AcikIsEmriSayisi = acikIsEmriSayisi,
+                OnayBekleyenler = onayBekleyenler,
+                OnayBekleyenSayisi = onayBekleyenSayisi,
+                TamamlananTalepSayisi = tamamlananTalepSayisi
+            };
+        }
+
+        // Referans WebServiceBakimRapor.PersonelPerformansRaporuGetir birebir (SP: sp_BakimTalepGetir).
+        public object GetBakimHelpDeskPerformans(string yil, string ay, string sirket)
+        {
+            int yilNum = 2026;
+            int.TryParse(yil, out yilNum);
+            if (yilNum <= 0) yilNum = DateTime.Now.Year;
+
+            DateTime t1, t2;
+            if (ay == "Tümü" || string.IsNullOrEmpty(ay))
+            {
+                t1 = new DateTime(yilNum, 1, 1);
+                t2 = new DateTime(yilNum, 12, 31, 23, 59, 59);
+            }
+            else
+            {
+                int ayNum = 1;
+                int.TryParse(ay, out ayNum);
+                if (ayNum < 1 || ayNum > 12) ayNum = 1;
+                t1 = new DateTime(yilNum, ayNum, 1);
+                t2 = new DateTime(yilNum, ayNum, DateTime.DaysInMonth(yilNum, ayNum), 23, 59, 59);
+            }
+
+            var raw = _context.SpBakimTalep.FromSqlRaw("EXEC sp_BakimTalepGetir {0}, {1}", t1, t2).AsNoTracking().ToList();
+
+            var talepBakimDict = _context.tb_TalepBakim.AsNoTracking().Where(b => b.SirketKodu != null)
+                .GroupBy(b => b.TalepKodu).ToDictionary(g => g.Key, g => g.First().SirketKodu);
+
+            var kaynakListe = raw.Where(x => string.IsNullOrEmpty(sirket) || (talepBakimDict.TryGetValue(x.TalepKodu, out var s) && s == sirket)).ToList();
+
+            var acikTalepKodlari = kaynakListe.Where(x => x.Durum == false).Select(x => x.TalepKodu).ToList();
+            var onayBekleyenDict = _context.tb_TalepAmir.AsNoTracking()
+                .Where(x => x.Durum == null && x.IslemTur == "ONAY" && acikTalepKodlari.Contains(x.TalepKodu))
+                .Select(x => x.TalepKodu).Distinct().ToList();
+
+            int talepSayisi = kaynakListe.Count;
+            int acikTalep = acikTalepKodlari.Count;
+            int tamamlananTalep = kaynakListe.Count(x => x.Durum == true);
+            int onayBekleyen = onayBekleyenDict.Count;
+            int bekleyenTalep = acikTalep - onayBekleyen;
+
+            var SLA_Liste = kaynakListe.Where(x => x.Durum == true && x.MttrTamamSure.HasValue).ToList();
+            double slaSuresi = SLA_Liste.Any() ? SLA_Liste.Average(x => x.MttrTamamSure.Value) / 60.0 : 0;
+
+            var aktifPersoneller = kaynakListe.Where(x => !string.IsNullOrEmpty(x.SorumluSicil)).Select(x => x.SorumluSicil).Distinct().ToList();
+            double ortIsYuku = aktifPersoneller.Count > 0 ? (double)acikTalep / aktifPersoneller.Count : 0;
+
+            var personeller = kaynakListe.Where(x => !string.IsNullOrEmpty(x.SorumluSicil))
+                .GroupBy(x => new { x.SorumluSicil, x.SorumluPer })
+                .Select(g =>
+                {
+                    var resolve = g.Where(x => x.Durum == true && x.MttrTamamSure.HasValue && x.MttrTamamSure > 0).ToList();
+                    var puanli = g.Where(x => x.TalepPuan.HasValue && x.TalepPuan > 0).ToList();
+                    return new
+                    {
+                        sicil = g.Key.SorumluSicil,
+                        name = g.Key.SorumluPer ?? "Bilinmiyor",
+                        title = "Bakım Personeli",
+                        dept = "-",
+                        openTasks = g.Count(x => x.Durum == false),
+                        tamamlanan = g.Count(x => x.Durum == true),
+                        bekleyen = g.Count(x => x.Durum == false),
+                        onayBekleyen = onayBekleyenDict.Count(o => g.Any(t => t.TalepKodu == o)),
+                        avgResolve = resolve.Any() ? (resolve.Average(x => x.MttrTamamSure.Value) / 60.0).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " Saat" : "0 Saat",
+                        ortalamaHizDouble = resolve.Any() ? (resolve.Average(x => x.MttrTamamSure.Value) / 60.0) : 0,
+                        cost = "-",
+                        rating = puanli.Any() ? puanli.Average(x => x.TalepPuan.Value) : 0
+                    };
+                }).ToList();
+
+            return new
+            {
+                Kpi = new
+                {
+                    talepSayisi,
+                    acikTalep,
+                    tamamlananTalep,
+                    onayBekleyen,
+                    bekleyenTalep,
+                    slaSuresi,
+                    ortIsYuku
+                },
+                Personel = personeller
+            };
         }
     }
 }

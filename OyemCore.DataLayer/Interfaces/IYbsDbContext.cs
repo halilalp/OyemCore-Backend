@@ -42,6 +42,7 @@ namespace OyemCore.DataLayer.Interfaces
         DbSet<tb_EgitimKategori> tb_EgitimKategori { get; set; }
         DbSet<tb_Departman> tb_Departman { get; set; }
         DbSet<tb_Unvan> tb_Unvan { get; set; }
+        DbSet<SpBakimTalep> SpBakimTalep { get; set; }
         DbSet<tb_BakimPerKontrol> tb_BakimPerKontrol { get; set; }
         DbSet<tb_BakimPerKontrolDetay> tb_BakimPerKontrolDetay { get; set; }
         DbSet<tb_BakimPerKontrolSarfiyat> tb_BakimPerKontrolSarfiyat { get; set; }
