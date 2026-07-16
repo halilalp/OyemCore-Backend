@@ -132,6 +132,104 @@ namespace OyemCore.Backend.Controllers
             }
         }
 
+        // Referans WebServiceTedarikci.GetDashboardStats ile birebir aynı hesaplama.
+        [HttpGet("dashboard")]
+        public IActionResult GetDashboardStats([FromQuery] int ay = 0)
+        {
+            try
+            {
+                var q = _context.viewTedDegList.AsNoTracking().AsQueryable();
+                if (ay > 0)
+                {
+                    var startDate = DateTime.Now.Date.AddMonths(-ay);
+                    q = q.Where(o => o.KayitTar >= startDate);
+                }
+                var list = q.ToList();
+
+                int totalEvaluations = list.Count;
+                int completed = list.Count(x => x.Durum == true);
+                int pending = list.Count(x => x.Durum == null);
+                int canceled = list.Count(x => x.Durum == false);
+
+                double avgScore = list.Count(x => x.Durum == true && x.ToplamPuan != null) > 0
+                    ? Math.Round(list.Where(x => x.Durum == true && x.ToplamPuan != null).Average(x => x.ToplamPuan.Value), 1) : 0;
+                int criticalCount = list.Count(x => x.Durum == true && x.ToplamPuan != null && x.ToplamPuan.Value < 60);
+                int buAyCount = list.Count(x => x.KayitTar.HasValue && x.KayitTar.Value.Month == DateTime.Now.Month && x.KayitTar.Value.Year == DateTime.Now.Year);
+
+                double avgKalite = list.Count(x => x.Durum == true && x.KalitePuani != null) > 0 ? Math.Round(list.Where(x => x.Durum == true && x.KalitePuani != null).Average(x => x.KalitePuani.Value), 1) : 0;
+                double avgFiyat = list.Count(x => x.Durum == true && x.FiyatPuani != null) > 0 ? Math.Round(list.Where(x => x.Durum == true && x.FiyatPuani != null).Average(x => x.FiyatPuani.Value), 1) : 0;
+                double avgTermin = list.Count(x => x.Durum == true && x.TerminPuani != null) > 0 ? Math.Round(list.Where(x => x.Durum == true && x.TerminPuani != null).Average(x => x.TerminPuani.Value), 1) : 0;
+                double avgBelge = list.Count(x => x.Durum == true && x.BelgePuani != null) > 0 ? Math.Round(list.Where(x => x.Durum == true && x.BelgePuani != null).Average(x => x.BelgePuani.Value), 1) : 0;
+
+                var classDist = list.Where(x => x.Durum == true && !string.IsNullOrEmpty(x.Sinif))
+                    .GroupBy(x => x.Sinif).Select(g => new { Class = g.Key, Count = g.Count() }).OrderBy(x => x.Class).ToList();
+
+                int trendAy = ay > 0 ? ay : 6;
+                var trend = Enumerable.Range(0, trendAy).Select(i => DateTime.Now.AddMonths(-i)).OrderBy(d => d).Select(m => new
+                {
+                    Month = m.ToString("MMM yy"),
+                    Created = list.Count(x => x.KayitTar.HasValue && x.KayitTar.Value.Month == m.Month && x.KayitTar.Value.Year == m.Year),
+                    Completed = list.Count(x => x.Durum == true && x.KayitTar.HasValue && x.KayitTar.Value.Month == m.Month && x.KayitTar.Value.Year == m.Year)
+                }).ToList();
+
+                var topSuppliers = list.Where(x => x.Durum == true && x.ToplamPuan != null && !string.IsNullOrEmpty(x.Unvan))
+                    .GroupBy(x => x.Unvan).Select(g => new { Supplier = g.Key, Score = Math.Round(g.Average(x => x.ToplamPuan.Value), 1) })
+                    .OrderByDescending(x => x.Score).Take(7).ToList();
+
+                var byType = list.Where(x => !string.IsNullOrEmpty(x.TedTurTanim))
+                    .GroupBy(x => x.TedTurTanim).Select(g => new { Type = g.Key, Count = g.Count() })
+                    .OrderByDescending(x => x.Count).Take(7).ToList();
+
+                var riskDist = list.Where(x => x.Durum == true && !string.IsNullOrEmpty(x.RiskDurum))
+                    .GroupBy(x => x.RiskDurum).Select(g => new { Risk = g.Key, Count = g.Count() }).ToList();
+
+                var insights = new List<object>();
+                if (avgScore >= 80)
+                    insights.Add(new { type = "success", icon = "ki-chart-line-up-2", text = "Tedarikçi genel puan ortalaması " + avgScore + "/100 — Tedarik zinciri kalitesi oldukça yüksek." });
+                else if (totalEvaluations > 3 && avgScore < 65)
+                    insights.Add(new { type = "warning", icon = "ki-chart-line-down", text = "Tedarikçi genel puan ortalaması " + avgScore + "/100 — Tedarikçi seçimi ve kalite standartları gözden geçirilmelidir." });
+                if (criticalCount > 0)
+                    insights.Add(new { type = "danger", icon = "ki-user-cross", text = criticalCount + " tedarikçi kritik sınır altında (<60 puan) — Alternatif tedarik kaynakları değerlendirilmeli." });
+                if (pending > 5)
+                    insights.Add(new { type = "warning", icon = "ki-timer", text = pending + " tedarikçi değerlendirmesi bekliyor — Kalite onay süreçlerinin hızlandırılması önerilir." });
+                if (avgTermin < 75 && completed > 0)
+                    insights.Add(new { type = "danger", icon = "ki-truck", text = "Ortalama teslimat puanı %" + avgTermin + " — Termin sürelerine bağlı gecikmeler üretim planlamasını riske atabilir." });
+                else if (avgTermin >= 90 && completed > 0)
+                    insights.Add(new { type = "success", icon = "ki-truck", text = "Ortalama teslimat puanı %" + avgTermin + " — Teslimat süreleri oldukça başarılı." });
+                if (avgKalite < 75 && completed > 0)
+                    insights.Add(new { type = "warning", icon = "ki-category", text = "Ortalama kalite puanı " + avgKalite + "/100 — Hammadde giriş kontrollerindeki red oranları incelenmelidir." });
+                if (avgFiyat < 70 && completed > 0)
+                    insights.Add(new { type = "info", icon = "ki-price-tag", text = "Ortalama fiyat puanı " + avgFiyat + "/100 — Fiyat verimliliği ve satın alma maliyetleri kontrol edilmeli." });
+                if (insights.Count == 0)
+                    insights.Add(new { type = "success", icon = "ki-badge", text = "Tüm tedarikçi göstergeleri normal seviyede." });
+
+                return Ok(new
+                {
+                    TotalEvaluations = totalEvaluations,
+                    Completed = completed,
+                    Pending = pending,
+                    Canceled = canceled,
+                    AvgScore = avgScore,
+                    CriticalCount = criticalCount,
+                    BuAyCount = buAyCount,
+                    AvgKalite = avgKalite,
+                    AvgFiyat = avgFiyat,
+                    AvgTermin = avgTermin,
+                    AvgBelge = avgBelge,
+                    ClassDist = classDist,
+                    Trend = trend,
+                    TopSuppliers = topSuppliers,
+                    ByType = byType,
+                    RiskDist = riskDist,
+                    AiInsights = insights
+                });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Tedarikçi dashboard verisi alinirken hata olustu: {ex.Message}" });
+            }
+        }
+
         [HttpGet("detail/{belgeNo}")]
         public IActionResult TalepDetayGetir(string belgeNo)
         {

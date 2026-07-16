@@ -619,53 +619,165 @@ namespace OyemCore.BusinessLayer.Services
                 .Select(g => new { Date = g.Key.ToString("dd.MM"), Count = g.Count() })
                 .ToList();
 
+            // Sayımlar — legacy WebServiceTicket.GetDashboardStats ile birebir aynı
             int totalCount = list.Count;
             int inProgressCount = list.Count(o => o.SurecDurumu == "ISLEM");
             int inTestCount = list.Count(o => o.SurecDurumu == "TEST");
             int completedCount = list.Count(o => o.SurecDurumu == "TAMAM");
             int havuzCount = list.Count(o => o.SurecDurumu == "HAVUZ");
             int openCount = havuzCount + inProgressCount + inTestCount;
-            int highPrioCount = list.Count(o => (o.Oncelik == "Y?ksek" || o.Oncelik == "Kritik") && o.SurecDurumu != "TAMAM");
+            int highPrioCount = list.Count(o => (o.Oncelik == "Yüksek" || o.Oncelik == "Kritik") && o.SurecDurumu != "TAMAM");
             int todayCount = list.Count(o => o.KayitTarihi.HasValue && o.KayitTarihi.Value.Date == DateTime.Today);
             int unassignedCount = list.Count(o => string.IsNullOrEmpty(o.SorumluSicilNo) && o.SurecDurumu != "TAMAM");
 
+            // İsim eşleme sözlükleri (legacy'de her grupta ayrı sorgu; burada tek seferde)
+            var sirketDict = _context.tb_Sirket.AsNoTracking().GroupBy(s => s.SirketKodu).ToDictionary(g => g.Key, g => g.First().SirketAdi);
+            var katDict = _context.tb_TicketKategori.AsNoTracking().GroupBy(k => k.ID).ToDictionary(g => g.Key, g => g.First().Tanim);
+            var persDict = _context.tb_Personel.AsNoTracking().GroupBy(p => p.SicilNo).ToDictionary(g => g.Key, g => g.First().AdSoyad);
+            Func<string, string> SirketAd = k => (k != null && sirketDict.TryGetValue(k, out var v) && v != null) ? v : (k ?? "");
+            Func<int?, string> KatAd = id => (id.HasValue && katDict.TryGetValue(id.Value, out var v) && v != null) ? v : "Genel";
+            Func<string, string> PersAd = s => (s != null && persDict.TryGetValue(s, out var v) && v != null) ? v : (s ?? "");
+
+            // --- AI Insights (kural tabanlı) — legacy ile birebir ---
             var insights = new List<object>();
             double completionRate = totalCount > 0 ? (double)completedCount / totalCount * 100 : 0;
 
             if (completionRate < 40 && totalCount > 5)
-                insights.Add(new { type = "warning", icon = "ki-chart-line-down", text = $"Tamamlanma orani {((int)completionRate)}% ? Bekleyen bilet hacmi kritik, ?ncelikli kapatma plani ?nerilir." });
+                insights.Add(new { type = "warning", icon = "ki-chart-line-down", text = "Tamamlanma oranı " + ((int)completionRate) + "% — Bekleyen bilet hacmi kritik, öncelikli kapatma planı önerilir." });
             else if (completionRate >= 80)
-                insights.Add(new { type = "success", icon = "ki-check-circle", text = $"Tamamlanma orani {((int)completionRate)}% ? Ekip performansi ?ok iyi, bu tempo s?rd?r?lebilir." });
+                insights.Add(new { type = "success", icon = "ki-check-circle", text = "Tamamlanma oranı " + ((int)completionRate) + "% — Ekip performansı çok iyi, bu tempo sürdürülebilir." });
 
             if (highPrioCount > 0)
-                insights.Add(new { type = "danger", icon = "ki-shield-cross", text = $"{highPrioCount} adet y?ksek/kritik ?ncelikli bilet bekliyor ? Acil m?dahale gerekebilir." });
+                insights.Add(new { type = "danger", icon = "ki-shield-cross", text = highPrioCount + " adet yüksek/kritik öncelikli bilet bekliyor — Acil müdahale gerekebilir." });
 
             if (unassignedCount > 0)
-                insights.Add(new { type = "warning", icon = "ki-user-cross", text = $"{unassignedCount} bilet hen?z sorumluya atanmamis ? Talep havuzunu kontrol edin." });
+                insights.Add(new { type = "warning", icon = "ki-user-cross", text = unassignedCount + " bilet henüz sorumluya atanmamış — Talep havuzunu kontrol edin." });
 
             if (inTestCount > 3)
-                insights.Add(new { type = "info", icon = "ki-magnifier", text = $"{inTestCount} bilet test asamasinda bekliyor ? Onay s?re?leri yavaslamis olabilir." });
+                insights.Add(new { type = "info", icon = "ki-magnifier", text = inTestCount + " bilet test aşamasında bekliyor — Onay süreçleri yavaşlamış olabilir." });
 
             if (todayCount > 5)
-                insights.Add(new { type = "info", icon = "ki-calendar", text = $"Bug?n {todayCount} yeni bilet a?ildi ? G?nl?k yogunluk ortalamanin ?zerinde." });
+                insights.Add(new { type = "info", icon = "ki-calendar", text = "Bugün " + todayCount + " yeni bilet açıldı — Günlük yoğunluk ortalamanın üzerinde." });
 
+            if (inProgressCount > 10)
+                insights.Add(new { type = "warning", icon = "ki-timer", text = inProgressCount + " bilet aynı anda işlemde — Paralel iş yükü fazla, dağılım gözden geçirilmeli." });
+
+            // Şirket bazlı iş yükü yoğunluğu
+            if (openCount > 10)
+            {
+                var topCompanyLoad = list.Where(o => o.SurecDurumu != "TAMAM").GroupBy(o => o.SirketKodu)
+                    .Select(g => new { Kodu = g.Key, Count = g.Count() }).OrderByDescending(x => x.Count).FirstOrDefault();
+                if (topCompanyLoad != null && topCompanyLoad.Count > (openCount * 0.4))
+                    insights.Add(new { type = "info", icon = "ki-bank", text = "Yük Dağılımı: Açık biletlerin " + ((int)((double)topCompanyLoad.Count / openCount * 100)) + "% kadarı '" + SirketAd(topCompanyLoad.Kodu) + "' şirketine ait. Kaynak planlaması bu tarafa kaydırılabilir." });
+            }
+
+            // Acil/kritik yoğunluk alarmı
+            if (openCount > 0)
+            {
+                double urgentRatio = (double)highPrioCount / openCount * 100;
+                if (urgentRatio > 20)
+                    insights.Add(new { type = "danger", icon = "ki-shield-tick", text = "Kritik Yoğunluk: Açık biletlerin " + ((int)urgentRatio) + "% kadarı Yüksek/Kritik seviyede — Genel sistem sağlığı risk altında olabilir." });
+            }
+
+            // Şirket bazlı sahipsiz biletler
+            var unassignedByCompany = list.Where(o => string.IsNullOrEmpty(o.SorumluSicilNo) && o.SurecDurumu != "TAMAM")
+                .GroupBy(o => o.SirketKodu).Select(g => new { Kodu = g.Key, Count = g.Count() }).OrderByDescending(x => x.Count).FirstOrDefault();
+            if (unassignedByCompany != null && unassignedByCompany.Count > 3)
+                insights.Add(new { type = "warning", icon = "ki-user-cross", text = "'" + SirketAd(unassignedByCompany.Kodu) + "' şirketine ait " + unassignedByCompany.Count + " talep henüz sahipsiz — Atama bekliyor." });
+
+            // Global kategori lideri
+            var globalTopCat = list.GroupBy(o => o.KategoriID).Select(g => new { ID = g.Key, Count = g.Count() }).OrderByDescending(x => x.Count).FirstOrDefault();
+            if (globalTopCat != null && globalTopCat.Count > (totalCount * 0.3))
+                insights.Add(new { type = "info", icon = "ki-chart-pie-4", text = "Global Trend: Tüm taleplerin " + ((int)((double)globalTopCat.Count / totalCount * 100)) + "% kadarı '" + KatAd(globalTopCat.ID) + "' odaklı — Bu alan için geliştirme/eğitim gerekebilir." });
+
+            // Yıllanmış biletler
             var staleCount = list.Count(o => o.SurecDurumu != "TAMAM" && o.KayitTarihi.HasValue && o.KayitTarihi.Value < DateTime.Now.AddDays(-14));
             if (staleCount > 0)
-                insights.Add(new { type = "danger", icon = "ki-time", text = $"{staleCount} bilet 2 haftadan uzun s?redir sonu?lanmamis ? Takip gerekebilir." });
+                insights.Add(new { type = "danger", icon = "ki-time", text = staleCount + " bilet 2 haftadan uzun süredir sonuçlanmamış — 'Yıllanmış' talepler için takip gerekebilir." });
 
+            // Darboğaz analizi (tek personelde aşırı yük)
+            if (openCount > 5)
+            {
+                var staffLoad = list.Where(o => !string.IsNullOrEmpty(o.SorumluSicilNo) && o.SurecDurumu != "TAMAM")
+                    .GroupBy(o => o.SorumluSicilNo).Select(g => new { Name = g.Key, Count = g.Count() }).OrderByDescending(x => x.Count).FirstOrDefault();
+                if (staffLoad != null && staffLoad.Count > (openCount * 0.4))
+                    insights.Add(new { type = "warning", icon = "ki-user-square", text = "İş yükü darboğazı: " + PersAd(staffLoad.Name) + " üzerinde " + staffLoad.Count + " açık bilet var — Görev paylaşımı önerilir." });
+            }
+
+            // Havuzda unutulanlar
+            var waitingInPool = list.Count(o => o.SurecDurumu == "HAVUZ" && o.KayitTarihi.HasValue && o.KayitTarihi.Value < DateTime.Now.AddDays(-3));
+            if (waitingInPool > 0)
+                insights.Add(new { type = "danger", icon = "ki-loading", text = waitingInPool + " bilet 3 gündür havuzda atanmayı bekliyor — Müdahale edilmezse SLA riskine girebilir." });
+
+            // Kategori yoğunluk alarmı
+            var topCategory = list.Where(o => o.SurecDurumu != "TAMAM").GroupBy(o => o.KategoriID)
+                .Select(g => new { ID = g.Key, Count = g.Count() }).OrderByDescending(x => x.Count).FirstOrDefault();
+            if (topCategory != null && topCategory.Count > 5)
+                insights.Add(new { type = "info", icon = "ki-category", text = "Yoğunluk tespiti: Açık biletlerin çoğu '" + KatAd(topCategory.ID) + "' kategorisinde toplanmış — Kronik bir sorun olabilir mi?" });
+
+            if (insights.Count == 0)
+                insights.Add(new { type = "success", icon = "ki-badge", text = "Tüm göstergeler normal sınırlar içinde — Sistem sağlıklı çalışıyor!" });
+
+            string StatusLabel(string s)
+            {
+                switch (s)
+                {
+                    case "HAVUZ": return "Talep Havuzuna aktarıldı";
+                    case "ISLEM": return "İşleme Alındı";
+                    case "TEST": return "Test aşamasına alındı";
+                    case "TAMAM": return "Tamamlandı";
+                    default: return s;
+                }
+            }
+
+            // Dönüş — legacy alan adları ve yapısıyla birebir
             return new
             {
-                TotalCount = totalCount,
-                InProgressCount = inProgressCount,
-                InTestCount = inTestCount,
-                CompletedCount = completedCount,
-                HavuzCount = havuzCount,
-                OpenCount = openCount,
-                HighPrioCount = highPrioCount,
-                TodayCount = todayCount,
-                UnassignedCount = unassignedCount,
-                WeeklyTrend = weeklyTrend,
-                Insights = insights
+                Total = totalCount,
+                Open = openCount,
+                Havuz = havuzCount,
+                Completed = completedCount,
+                InProgress = inProgressCount,
+                InTest = inTestCount,
+                HighPriority = highPrioCount,
+                Today = todayCount,
+                Unassigned = unassignedCount,
+
+                ByStatus = list.GroupBy(o => o.SurecDurumu).Select(g => new { Status = StatusLabel(g.Key), Count = g.Count() }).ToList(),
+
+                ByPriority = list.GroupBy(o => o.Oncelik).Select(g => new { Priority = g.Key, Count = g.Count() }).ToList(),
+
+                ByCompany = list.GroupBy(o => o.SirketKodu).Select(g => new
+                {
+                    SirketKodu = g.Key,
+                    SirketAdi = SirketAd(g.Key),
+                    Count = g.Count()
+                }).ToList(),
+
+                ByCategory = list.GroupBy(o => o.KategoriID).Select(g =>
+                {
+                    string katAd = KatAd(g.Key);
+                    int total = g.Count();
+                    int havuz = g.Count(x => x.SurecDurumu == "HAVUZ");
+                    int islem = g.Count(x => x.SurecDurumu == "ISLEM");
+                    int test = g.Count(x => x.SurecDurumu == "TEST");
+                    int tamam = g.Count(x => x.SurecDurumu == "TAMAM");
+                    string aiYorum = string.Format("'{0}' kategorisinde toplam {1} talep açılmış. Bunların {2} kadarı havuzda bekliyor, {3} kadarı işlemde/testte ve {4} tanesi başarıyla tamamlanmış. Başarı oranı %{5}.",
+                        katAd, total, havuz, islem + test, tamam, total > 0 ? (int)((double)tamam / total * 100) : 0);
+                    return new { KategoriAd = katAd, Count = total, HavuzCount = havuz, IslemCount = islem, TestCount = test, TamamCount = tamam, AiInsight = aiYorum };
+                }).OrderByDescending(x => x.Count).Take(5).ToList(),
+
+                ByStaff = list.Where(o => !string.IsNullOrEmpty(o.SorumluSicilNo)).GroupBy(o => o.SorumluSicilNo).Select(g => new
+                {
+                    StaffName = PersAd(g.Key),
+                    HavuzCount = g.Count(x => x.SurecDurumu == "HAVUZ"),
+                    IslemCount = g.Count(x => x.SurecDurumu == "ISLEM"),
+                    TestCount = g.Count(x => x.SurecDurumu == "TEST"),
+                    CompletedCount = g.Count(x => x.SurecDurumu == "TAMAM")
+                }).OrderByDescending(x => x.IslemCount + x.HavuzCount + x.TestCount).Take(10).ToList(),
+
+                Trend = weeklyTrend,
+                AiInsights = insights
             };
         }
 
