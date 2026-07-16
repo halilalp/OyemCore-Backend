@@ -17,5 +17,9 @@ namespace OyemCore.DataLayer.Entities
         public string Departman { get; set; }
         public string DahiliNo { get; set; }
         public DateTime? DogumTar { get; set; }
+        // İK dashboard (IKDashboardVerisiGetir) için: yaka tipi (MY/BY/GY), çıkış tarihi, ünvan kodu
+        public string MyBy { get; set; }
+        public DateTime? IstenCikisTar { get; set; }
+        public string UnvanKodu { get; set; }
     }
 }
