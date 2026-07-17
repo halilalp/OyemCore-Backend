@@ -636,7 +636,7 @@ namespace OyemCore.BusinessLayer.Services
             int yilNum = 2026;
             int.TryParse(yil, out yilNum);
 
-            if (ay == "T?m?" || string.IsNullOrEmpty(ay))
+            if (ay == "Tümü" || string.IsNullOrEmpty(ay))
             {
                 t1 = new DateTime(yilNum, 1, 1);
                 t2 = new DateTime(yilNum, 12, 31, 23, 59, 59);
@@ -777,11 +777,11 @@ namespace OyemCore.BusinessLayer.Services
         public object GetDashboardOzet(string sirketKodu)
         {
             var bakimDict = _context.tb_TalepBakim.AsNoTracking().Where(b => b.SirketKodu != null)
-                .GroupBy(b => b.TalepKodu).ToDictionary(g => g.Key, g => g.First().SirketKodu);
+                .Where(b => b.TalepKodu != null).GroupBy(b => b.TalepKodu).ToDictionary(g => g.Key, g => g.First().SirketKodu);
             bool SirketOk(string talepKodu) => string.IsNullOrEmpty(sirketKodu) || (bakimDict.TryGetValue(talepKodu, out var s) && s == sirketKodu);
 
             var onayKodlari = _context.tb_TalepAmir.AsNoTracking().Where(a => a.Durum == null && a.IslemTur == "ONAY").Select(a => a.TalepKodu).ToHashSet();
-            var persDict = _context.tb_Personel.AsNoTracking().GroupBy(p => p.SicilNo).ToDictionary(g => g.Key, g => g.First().AdSoyad);
+            var persDict = _context.tb_Personel.AsNoTracking().Where(p => p.SicilNo != null).GroupBy(p => p.SicilNo).ToDictionary(g => g.Key, g => g.First().AdSoyad);
 
             var bakimTaleps = _context.tb_Talep.AsNoTracking().Where(t => t.TalepTurKodu == "BAKIM").ToList();
 
@@ -836,7 +836,7 @@ namespace OyemCore.BusinessLayer.Services
             var raw = _context.SpBakimTalep.FromSqlRaw("EXEC sp_BakimTalepGetir {0}, {1}", t1, t2).AsNoTracking().ToList();
 
             var talepBakimDict = _context.tb_TalepBakim.AsNoTracking().Where(b => b.SirketKodu != null)
-                .GroupBy(b => b.TalepKodu).ToDictionary(g => g.Key, g => g.First().SirketKodu);
+                .Where(b => b.TalepKodu != null).GroupBy(b => b.TalepKodu).ToDictionary(g => g.Key, g => g.First().SirketKodu);
 
             var kaynakListe = raw.Where(x => string.IsNullOrEmpty(sirket) || (talepBakimDict.TryGetValue(x.TalepKodu, out var s) && s == sirket)).ToList();
 

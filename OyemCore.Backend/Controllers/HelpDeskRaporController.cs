@@ -70,7 +70,7 @@ namespace OyemCore.Backend.Controllers
 
                 var sicilNos = sourceList.Where(x => !string.IsNullOrEmpty(x.SorumluSicil)).Select(x => x.SorumluSicil).Distinct().ToList();
                 var personelDict = _context.tb_Personel.AsNoTracking().Where(p => sicilNos.Contains(p.SicilNo))
-                    .GroupBy(p => p.SicilNo).ToDictionary(g => g.Key, g => g.First().AdSoyad);
+                    .Where(p => p.SicilNo != null).GroupBy(p => p.SicilNo).ToDictionary(g => g.Key, g => g.First().AdSoyad);
 
                 var personeller = sourceList.Where(x => !string.IsNullOrEmpty(x.SorumluSicil))
                     .GroupBy(x => x.SorumluSicil)

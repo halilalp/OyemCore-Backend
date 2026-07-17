@@ -470,7 +470,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="sirket">??irket kodu filtresi.</param>
         /// <returns>Personel performans raporu listesini d?ner.</returns>
         [HttpGet("rapor/personel")]
-        public ActionResult<IEnumerable<PersonelPerformansRaporuDto>> GetPersonelPerformansRaporu([FromQuery] string yil = "2026", [FromQuery] string ay = "T?m?", [FromQuery] string sirket = "")
+        public ActionResult<IEnumerable<PersonelPerformansRaporuDto>> GetPersonelPerformansRaporu([FromQuery] string yil = "2026", [FromQuery] string ay = "Tümü", [FromQuery] string sirket = "")
         {
             try
             {

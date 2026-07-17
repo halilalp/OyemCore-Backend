@@ -38,9 +38,9 @@ namespace OyemCore.Backend.Controllers
                 if (!string.IsNullOrEmpty(yakaFilter)) baseList = baseList.Where(p => p.MyBy == yakaFilter).ToList();
                 if (!string.IsNullOrEmpty(sFilter)) baseList = baseList.Where(p => p.SirketKodu == sFilter).ToList();
 
-                var sirketDict = _context.tb_Sirket.AsNoTracking().GroupBy(s => s.SirketKodu).ToDictionary(g => g.Key, g => g.First().SirketAdi);
-                var departmanDict = _context.tb_Departman.AsNoTracking().GroupBy(k => k.Kod).ToDictionary(g => g.Key, g => g.First().DepartmanAdi);
-                var unvanDict = _context.tb_Unvan.AsNoTracking().GroupBy(k => k.UnvanKodu).ToDictionary(g => g.Key, g => g.First().UnvanTanim);
+                var sirketDict = _context.tb_Sirket.AsNoTracking().Where(s => s.SirketKodu != null).GroupBy(s => s.SirketKodu).ToDictionary(g => g.Key, g => g.First().SirketAdi);
+                var departmanDict = _context.tb_Departman.AsNoTracking().Where(k => k.Kod != null).GroupBy(k => k.Kod).ToDictionary(g => g.Key, g => g.First().DepartmanAdi);
+                var unvanDict = _context.tb_Unvan.AsNoTracking().Where(k => k.UnvanKodu != null).GroupBy(k => k.UnvanKodu).ToDictionary(g => g.Key, g => g.First().UnvanTanim);
 
                 // 1. Turnover (son 12 ay)
                 DateTime referenceDate = end ?? DateTime.Now;

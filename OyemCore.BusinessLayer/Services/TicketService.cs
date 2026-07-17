@@ -640,9 +640,14 @@ namespace OyemCore.BusinessLayer.Services
             int unassignedCount = list.Count(o => string.IsNullOrEmpty(o.SorumluSicilNo) && o.SurecDurumu != "TAMAM");
 
             // İsim eşleme sözlükleri (legacy'de her grupta ayrı sorgu; burada tek seferde)
-            var sirketDict = _context.tb_Sirket.AsNoTracking().GroupBy(s => s.SirketKodu).ToDictionary(g => g.Key, g => g.First().SirketAdi);
-            var katDict = _context.tb_TicketKategori.AsNoTracking().GroupBy(k => k.ID).ToDictionary(g => g.Key, g => g.First().Tanim);
-            var persDict = _context.tb_Personel.AsNoTracking().GroupBy(p => p.SicilNo).ToDictionary(g => g.Key, g => g.First().AdSoyad);
+            // NOT: ToDictionary null anahtarda exception fırlatır; null SicilNo/SirketKodu
+            // olan tek bir kayıt tüm dashboard'u patlatıyordu. Null anahtarlar eleniyor.
+            var sirketDict = _context.tb_Sirket.AsNoTracking().Where(s => s.SirketKodu != null)
+                .GroupBy(s => s.SirketKodu).ToDictionary(g => g.Key, g => g.First().SirketAdi);
+            var katDict = _context.tb_TicketKategori.AsNoTracking()
+                .GroupBy(k => k.ID).ToDictionary(g => g.Key, g => g.First().Tanim);
+            var persDict = _context.tb_Personel.AsNoTracking().Where(p => p.SicilNo != null)
+                .GroupBy(p => p.SicilNo).ToDictionary(g => g.Key, g => g.First().AdSoyad);
             Func<string, string> SirketAd = k => (k != null && sirketDict.TryGetValue(k, out var v) && v != null) ? v : (k ?? "");
             Func<int?, string> KatAd = id => (id.HasValue && katDict.TryGetValue(id.Value, out var v) && v != null) ? v : "Genel";
             Func<string, string> PersAd = s => (s != null && persDict.TryGetValue(s, out var v) && v != null) ? v : (s ?? "");
