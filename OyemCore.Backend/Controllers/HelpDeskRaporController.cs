@@ -24,6 +24,12 @@ namespace OyemCore.Backend.Controllers
         {
             try
             {
+                // Admin (modülün belgesi: IT/ERP/BAKIMADMIN veya ADMIN) tüm şirketleri görür;
+                // değilse kendi şirketine kilitlenir. (BAKIM talepleri şirkete bağlıdır.)
+                var moduleAdminKodu = talepTur == "BAKIM" ? "BAKIMADMIN" : talepTur; // IT / ERP / BAKIMADMIN
+                var (hdAdmin, ownSirket) = Helpers.ScopeHelper.GetCompanyScope(User, _context, moduleAdminKodu);
+                if (!hdAdmin) sirket = ownSirket;
+
                 int yilNum = 2026;
                 int.TryParse(yil, out yilNum);
                 if (yilNum <= 0) yilNum = DateTime.Now.Year;

@@ -15,10 +15,12 @@ namespace OyemCore.Backend.Controllers
     public class BakimController : ControllerBase
     {
         private readonly IBakimService _bakimService;
+        private readonly OyemCore.DataLayer.Interfaces.IYbsDbContext _context;
 
-        public BakimController(IBakimService bakimService)
+        public BakimController(IBakimService bakimService, OyemCore.DataLayer.Interfaces.IYbsDbContext context)
         {
             _bakimService = bakimService;
+            _context = context;
         }
 
         private string GetCurrentSicilNo()
@@ -474,6 +476,8 @@ namespace OyemCore.Backend.Controllers
         {
             try
             {
+                var (bAdmin, ownSirket) = Helpers.ScopeHelper.GetCompanyScope(User, _context, "BAKIMADMIN");
+                if (!bAdmin) sirket = ownSirket;
                 var list = _bakimService.GetPersonelPerformansRaporu(yil, ay, sirket);
                 return Ok(list);
             }
@@ -494,6 +498,8 @@ namespace OyemCore.Backend.Controllers
         {
             try
             {
+                var (bAdmin, ownSirket) = Helpers.ScopeHelper.GetCompanyScope(User, _context, "BAKIMADMIN");
+                if (!bAdmin) sirket = ownSirket;
                 var list = _bakimService.GetBakimDashboardStats(yillar, sirket);
                 return Ok(list);
             }
@@ -509,6 +515,8 @@ namespace OyemCore.Backend.Controllers
         {
             try
             {
+                var (bAdmin, ownSirket) = Helpers.ScopeHelper.GetCompanyScope(User, _context, "BAKIMADMIN");
+                if (!bAdmin) sirket = ownSirket;
                 return Ok(_bakimService.GetDashboardOzet(sirket));
             }
             catch (Exception ex)
@@ -523,6 +531,8 @@ namespace OyemCore.Backend.Controllers
         {
             try
             {
+                var (bAdmin, ownSirket) = Helpers.ScopeHelper.GetCompanyScope(User, _context, "BAKIMADMIN");
+                if (!bAdmin) sirket = ownSirket;
                 return Ok(_bakimService.GetBakimHelpDeskPerformans(yil, ay, sirket));
             }
             catch (Exception ex)

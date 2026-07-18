@@ -34,6 +34,10 @@ namespace OyemCore.Backend.Controllers
                 string yakaFilter = string.IsNullOrEmpty(yaka) || yaka == "Tümü" ? "" : yaka;
                 string sFilter = string.IsNullOrEmpty(sirketFilter) || sirketFilter == "Tümü" ? "" : sirketFilter;
 
+                // Admin (IK/ADMIN belgesi) tüm şirketleri görür; değilse kendi şirketine kilitlenir.
+                var (ikAdmin, ownSirket) = Helpers.ScopeHelper.GetCompanyScope(User, _context, "IK");
+                if (!ikAdmin) sFilter = ownSirket;
+
                 var baseList = _context.tb_Personel.AsNoTracking().ToList();
                 if (!string.IsNullOrEmpty(yakaFilter)) baseList = baseList.Where(p => p.MyBy == yakaFilter).ToList();
                 if (!string.IsNullOrEmpty(sFilter)) baseList = baseList.Where(p => p.SirketKodu == sFilter).ToList();
