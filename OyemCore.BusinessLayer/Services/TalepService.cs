@@ -1069,6 +1069,17 @@ namespace OyemCore.BusinessLayer.Services
 
             isEmri.Sicil = sicil;
             _context.SaveChanges();
+
+            // İş emri atanan kişiye bildirim (atayan hariç).
+            if (!string.IsNullOrEmpty(sicil) && sicil != user.SicilNo)
+            {
+                _ = _pushNotificationService.SendToUserBySicilNoAsync(
+                    sicil,
+                    "İş Emri Size Atandı",
+                    $"{isEmri.TalepKodu} talebine bağlı bir iş emri size atandı.",
+                    new { type = "BAKIM", screen = "TalepScreen", code = isEmri.TalepKodu }
+                );
+            }
             return true;
         }
 
@@ -1124,6 +1135,20 @@ namespace OyemCore.BusinessLayer.Services
             }
 
             _context.SaveChanges();
+
+            // Talep sahibine durum bildirimi (işlemi yapan hariç).
+            if (status == "Kapali" && !string.IsNullOrEmpty(t.KayitSicil) && t.KayitSicil != user.SicilNo)
+            {
+                var mesaj = t.TalepTurKodu == "BAKIM"
+                    ? $"{t.TalepKodu} talebiniz form onayınıza sunuldu."
+                    : $"{t.TalepKodu} talebiniz kapatıldı.";
+                _ = _pushNotificationService.SendToUserBySicilNoAsync(
+                    t.KayitSicil,
+                    $"{(t.TalepTurKodu == "BAKIM" ? "Bakım" : t.TalepTurKodu)} Talebi Güncellendi",
+                    mesaj,
+                    new { type = t.TalepTurKodu, screen = "TalepScreen", code = t.TalepKodu, id = t.TalepID }
+                );
+            }
             return true;
         }
 
@@ -1144,6 +1169,17 @@ namespace OyemCore.BusinessLayer.Services
             _context.SaveChanges();
 
             BelgeTarihceKaydet(request.TalepKodu, "Talep Ataması Yapıldı", $"Sorumlu: {name} (Atayan: {user.AdSoyad})");
+
+            // Sorumlu olarak atanan kişiye push (kendine atamada gönderme).
+            if (!string.IsNullOrEmpty(sicilNo) && sicilNo != user.SicilNo)
+            {
+                _ = _pushNotificationService.SendToUserBySicilNoAsync(
+                    sicilNo,
+                    $"{(request.TalepTurKodu == "BAKIM" ? "Bakım" : request.TalepTurKodu)} Talebi Size Atandı",
+                    $"'{request.Konu}' konulu talebe ({request.TalepKodu}) sorumlu olarak atandınız.",
+                    new { type = request.TalepTurKodu, screen = "TalepScreen", code = request.TalepKodu, id = request.TalepID }
+                );
+            }
 
             return true;
         }
@@ -1170,6 +1206,22 @@ namespace OyemCore.BusinessLayer.Services
             _context.SaveChanges();
 
             BelgeTarihceKaydet(request.TalepKodu, "Gelişme Eklendi", $"Gelişme Eklendi. (Ekleyen: {user.AdSoyad})");
+
+            // Talep sahibi ve sorumlusuna gelişme bildirimi (ekleyen hariç).
+            var hedefSiciller = new List<string>();
+            if (!string.IsNullOrEmpty(request.KayitSicil) && request.KayitSicil != user.SicilNo)
+                hedefSiciller.Add(request.KayitSicil);
+            if (!string.IsNullOrEmpty(request.SorumluSicil) && request.SorumluSicil != user.SicilNo && request.SorumluSicil != request.KayitSicil)
+                hedefSiciller.Add(request.SorumluSicil);
+            foreach (var hedef in hedefSiciller)
+            {
+                _ = _pushNotificationService.SendToUserBySicilNoAsync(
+                    hedef,
+                    $"{(request.TalepTurKodu == "BAKIM" ? "Bakım" : request.TalepTurKodu)} Talebine Gelişme",
+                    $"{user.AdSoyad}, {request.TalepKodu} talebine bir gelişme ekledi.",
+                    new { type = request.TalepTurKodu, screen = "TalepScreen", code = request.TalepKodu, id = request.TalepID }
+                );
+            }
 
             return true;
         }
