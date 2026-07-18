@@ -613,7 +613,14 @@ namespace OyemCore.BusinessLayer.Services
 
         public BakimDropdownsDto GetBakimDropdowns(string sicilNo, string adminBelgeTur)
         {
-            bool isBakimAdmin = adminBelgeTur != null && (adminBelgeTur.Contains("BAKIMADMIN") || adminBelgeTur.Contains("ADMIN"));
+            // Referans (webportal) AdminBelgeTur formatı: "*IT*ERP*BAKIMADMIN*" — yıldızla ayrık.
+            // Contains("ADMIN") kullanmak "BAKIMADMIN" içinde de eşleştiği için yanlış sonuç
+            // veriyordu; webportal'daki gibi yıldızdan bölüp tam token karşılaştırılır.
+            var belgeTurler = (adminBelgeTur ?? "")
+                .Split(new[] { '*' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(t => t.Trim().ToUpperInvariant())
+                .ToList();
+            bool isBakimAdmin = belgeTurler.Contains("BAKIMADMIN") || belgeTurler.Contains("ADMIN");
 
             var sirkets = _context.tb_Sirket.AsNoTracking().OrderBy(s => s.SirketKodu).ToList();
             var bolums = _context.tb_Bolum.AsNoTracking().OrderBy(b => b.BolumAdi).ToList();
@@ -777,11 +784,11 @@ namespace OyemCore.BusinessLayer.Services
         public object GetDashboardOzet(string sirketKodu)
         {
             var bakimDict = _context.tb_TalepBakim.AsNoTracking().Where(b => b.SirketKodu != null)
-                .Where(b => b.TalepKodu != null).GroupBy(b => b.TalepKodu).ToDictionary(g => g.Key, g => g.First().SirketKodu);
+                .Where(b => b.TalepKodu != null).ToList().GroupBy(b => b.TalepKodu).ToDictionary(g => g.Key, g => g.First().SirketKodu);
             bool SirketOk(string talepKodu) => string.IsNullOrEmpty(sirketKodu) || (bakimDict.TryGetValue(talepKodu, out var s) && s == sirketKodu);
 
             var onayKodlari = _context.tb_TalepAmir.AsNoTracking().Where(a => a.Durum == null && a.IslemTur == "ONAY").Select(a => a.TalepKodu).ToHashSet();
-            var persDict = _context.tb_Personel.AsNoTracking().Where(p => p.SicilNo != null).GroupBy(p => p.SicilNo).ToDictionary(g => g.Key, g => g.First().AdSoyad);
+            var persDict = _context.tb_Personel.AsNoTracking().Where(p => p.SicilNo != null).ToList().GroupBy(p => p.SicilNo).ToDictionary(g => g.Key, g => g.First().AdSoyad);
 
             var bakimTaleps = _context.tb_Talep.AsNoTracking().Where(t => t.TalepTurKodu == "BAKIM").ToList();
 
@@ -836,7 +843,7 @@ namespace OyemCore.BusinessLayer.Services
             var raw = _context.SpBakimTalep.FromSqlRaw("EXEC sp_BakimTalepGetir {0}, {1}", t1, t2).AsNoTracking().ToList();
 
             var talepBakimDict = _context.tb_TalepBakim.AsNoTracking().Where(b => b.SirketKodu != null)
-                .Where(b => b.TalepKodu != null).GroupBy(b => b.TalepKodu).ToDictionary(g => g.Key, g => g.First().SirketKodu);
+                .Where(b => b.TalepKodu != null).ToList().GroupBy(b => b.TalepKodu).ToDictionary(g => g.Key, g => g.First().SirketKodu);
 
             var kaynakListe = raw.Where(x => string.IsNullOrEmpty(sirket) || (talepBakimDict.TryGetValue(x.TalepKodu, out var s) && s == sirket)).ToList();
 
