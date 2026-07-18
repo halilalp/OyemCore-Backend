@@ -588,7 +588,9 @@ namespace OyemCore.BusinessLayer.Services
                 .AsNoTracking()
                 .FirstOrDefault(p => p.SicilNo == usr.SicilNo);
 
-            bool isAdmin = HasTicketAuthority(usr.AdminBelgeTur);
+            // Dashboard kuralı: AdminBelgeTur'da "ADMIN" ifadesi geçen (BAKIMADMIN dahil) tüm
+            // şirketleri görür; diğer herkes yalnız kendi şirketini görür.
+            bool isAdmin = (usr.AdminBelgeTur ?? "").ToUpperInvariant().Contains("ADMIN");
 
             var query = _context.tb_Ticket.AsNoTracking().AsQueryable();
 
