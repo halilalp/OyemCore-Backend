@@ -1,6 +1,9 @@
 using System;
+using System.IO;
+using System.Threading.Tasks;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +20,55 @@ namespace OyemCore.Backend.Controllers
         public AuthController(IAuthService authService)
         {
             _authService = authService;
+        }
+
+        /// <summary>
+        /// Giriş yapan kullanıcının profil resmini (AVATAR modülü, {sicilNo}.jpg) günceller.
+        /// UserAvatar bileşeni resmi AVATAR/{cleanSicil}.jpg olarak çektiği için aynı adla üzerine yazılır.
+        /// </summary>
+        [Authorize]
+        [HttpPost("avatar")]
+        public async Task<IActionResult> UploadAvatar(
+            [FromBody] AvatarUploadRequest dto,
+            [FromServices] ITenantService tenantService,
+            [FromServices] IWebHostEnvironment env)
+        {
+            try
+            {
+                var sicilNo = User.FindFirst("SicilNo")?.Value;
+                if (string.IsNullOrEmpty(sicilNo))
+                    return Unauthorized(new { message = "Oturum bilgisi bulunamadı." });
+                if (dto == null || string.IsNullOrEmpty(dto.FileBase64))
+                    return BadRequest(new { message = "Görsel verisi geçersiz." });
+
+                // Sicil "SG.SCL0001-00" olabilir; dosya "SCL0001-00.jpg" adıyla kayıtlı (UserAvatar ile aynı mantık).
+                var cleanSicil = sicilNo.Contains('.') ? sicilNo.Substring(sicilNo.IndexOf('.') + 1) : sicilNo;
+                var fileName = $"{cleanSicil}.jpg";
+                var modulePath = tenantService.GetModulPath("AVATAR");
+
+                if (tenantService.IsStorageRemote())
+                {
+                    var remoteRelativePath = $"{modulePath}/{fileName}".Replace("\\", "/").Replace("//", "/");
+                    var uploadResult = await tenantService.UploadToRemoteStorageAsync(remoteRelativePath, dto.FileBase64);
+                    if (!uploadResult.Success)
+                        return BadRequest(new { message = $"Yükleme başarısız: {uploadResult.Error}" });
+                }
+                else
+                {
+                    var storageFolder = tenantService.ResolveLocalStorageFolder(env.ContentRootPath);
+                    var uploadDir = Path.Combine(storageFolder, modulePath);
+                    if (!Directory.Exists(uploadDir)) Directory.CreateDirectory(uploadDir);
+                    var fullPath = Path.Combine(uploadDir, fileName);
+                    var fileBytes = Convert.FromBase64String(dto.FileBase64);
+                    System.IO.File.WriteAllBytes(fullPath, fileBytes);
+                }
+
+                return Ok(new { success = true, fileName });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Profil resmi güncellenemedi: {ex.Message}" });
+            }
         }
 
         /// <summary>
@@ -237,5 +289,10 @@ namespace OyemCore.Backend.Controllers
     public class PushTokenRequest
     {
         public string Token { get; set; }
+    }
+
+    public class AvatarUploadRequest
+    {
+        public string FileBase64 { get; set; }
     }
 }
