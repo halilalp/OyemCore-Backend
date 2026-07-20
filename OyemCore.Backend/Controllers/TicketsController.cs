@@ -239,7 +239,10 @@ namespace OyemCore.Backend.Controllers
                     relativeUrl = $"/{modulePath}/{uniqueName}".Replace("\\", "/").Replace("//", "/");
                 }
 
-                var success = _ticketService.SaveFile(id, dto.FileName, relativeUrl, ext);
+                // Referans (webportal) convention'ı: tb_TicketDosya.DosyaYolu'nda SADECE dosya adı
+                // saklanır (örn. "abc123.jpg"); tam yol saklanırsa webportal dosyayı bulamıyor.
+                var storedFileName = relativeUrl.Split('/').Last();
+                var success = _ticketService.SaveFile(id, dto.FileName, storedFileName, ext);
                 if (!success)
                 {
                     return BadRequest(new { message = "Dosya yüklendi ancak bilete eklenemedi." });
