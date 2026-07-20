@@ -350,15 +350,15 @@ namespace OyemCore.BusinessLayer.Services
                     
                     await SendToUserBySicilNoAsync(
                         talep.KayitSicil,
-                        $"{typeLabel} Talebinize Uzman Atandi",
-                        $"'{talep.Konu}' konulu talebinize ({talep.TalepKodu}) sorumlu uzman atandi: {sorumluName}.",
+                        $"{typeLabel} Talebinize Uzman Atandı",
+                        $"'{talep.Konu}' konulu talebinize ({talep.TalepKodu}) sorumlu uzman atandı: {sorumluName}.",
                         new { type = talep.TalepTurKodu, screen = "TalepScreen", code = talep.TalepKodu, id = talep.TalepID }
                     );
 
                     await SendToUserBySicilNoAsync(
                         talep.SorumluSicil,
-                        $"Yeni {typeLabel} Talebi Atandi",
-                        $"'{talep.Konu}' konulu talep ({talep.TalepKodu}) size atandi.",
+                        $"Yeni {typeLabel} Talebi Atandı",
+                        $"'{talep.Konu}' konulu talep ({talep.TalepKodu}) size atandı.",
                         new { type = talep.TalepTurKodu, screen = "TalepScreen", code = talep.TalepKodu, id = talep.TalepID }
                     );
                 }
@@ -779,15 +779,15 @@ namespace OyemCore.BusinessLayer.Services
 
                     await SendToUserBySicilNoAsync(
                         ticket.KayitSicilNo,
-                        "Ticketiniza Sorumlu Atandi",
-                        $"'{ticket.Baslik}' baslikli destek talebinize ({ticket.TakipKodu}) sorumlu atandi: {sorumluName}.",
+                        "Ticketınıza Sorumlu Atandı",
+                        $"'{ticket.Baslik}' başlıklı destek talebinize ({ticket.TakipKodu}) sorumlu atandı: {sorumluName}.",
                         new { type = "ticket", screen = "TicketScreen", id = ticket.ID }
                     );
 
                     await SendToUserBySicilNoAsync(
                         ticket.SorumluSicilNo,
-                        "Size Yeni Ticket Atandi",
-                        $"'{ticket.Baslik}' baslikli ticket ({ticket.TakipKodu}) size atandi.",
+                        "Size Yeni Ticket Atandı",
+                        $"'{ticket.Baslik}' başlıklı ticket ({ticket.TakipKodu}) size atandı.",
                         new { type = "ticket", screen = "TicketScreen", id = ticket.ID }
                     );
                 }
