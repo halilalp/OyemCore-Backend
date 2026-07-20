@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
@@ -118,6 +120,43 @@ namespace OyemCore.BusinessLayer.Services
             {
                 _logger.LogError(ex, "PushNotificationService: SendExpoNotificationAsync failed for token {Token}", pushToken);
             }
+        }
+
+        /// <summary>
+        /// Bildirim alıcılarını iş kuralına göre çözer:
+        /// 1) İşlemi yapan kişiye bildirim GİTMEZ.
+        /// 2) Kalan ilgililere (kayıt sahibi / sorumlu) gider.
+        /// 3) Hiç ilgili kalmazsa modül admin'lerine gider
+        ///    (tb_Kullanici.AdminBelgeTur içinde modül kodu geçenler, ör. TICKET).
+        /// </summary>
+        private async Task<List<string>> ResolveRecipientsAsync(
+            IYbsDbContext context, string actorSicil, string moduleCode, params string[] ilgililer)
+        {
+            var actor = (actorSicil ?? "").Trim();
+
+            var list = (ilgililer ?? Array.Empty<string>())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s.Trim())
+                .Where(s => !string.Equals(s, actor, StringComparison.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (list.Count > 0) return list;
+
+            // İlgili yoksa modül admin'lerine düş
+            var mod = (moduleCode ?? "").ToUpperInvariant();
+            if (string.IsNullOrEmpty(mod)) return list;
+
+            var admins = await context.tb_Kullanici.AsNoTracking()
+                .Where(k => k.AdminBelgeTur != null && k.AdminBelgeTur.ToUpper().Contains(mod))
+                .Select(k => k.SicilNo)
+                .ToListAsync();
+
+            return admins
+                .Where(s => !string.IsNullOrWhiteSpace(s) && !string.Equals(s.Trim(), actor, StringComparison.OrdinalIgnoreCase))
+                .Select(s => s.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         // --------------------------------------------------------------------
@@ -761,7 +800,7 @@ namespace OyemCore.BusinessLayer.Services
             }
         }
 
-        public async Task NotifyTicketSorumluAtandiAsync(int ticketId)
+        public async Task NotifyTicketSorumluAtandiAsync(int ticketId, int actionUserId = 0)
         {
             try
             {
@@ -769,27 +808,45 @@ namespace OyemCore.BusinessLayer.Services
                 {
                     var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
                     var ticket = await context.tb_Ticket.AsNoTracking().FirstOrDefaultAsync(t => t.ID == ticketId);
-                    if (ticket == null || string.IsNullOrEmpty(ticket.SorumluSicilNo)) return;
+                    if (ticket == null) return;
 
-                    var sorumluName = await context.tb_Personel
-                        .AsNoTracking()
-                        .Where(p => p.SicilNo == ticket.SorumluSicilNo)
-                        .Select(p => p.AdSoyad)
-                        .FirstOrDefaultAsync() ?? ticket.SorumluSicilNo;
+                    // İşlemi yapan kişi (varsa) — kendisine bildirim gitmeyecek.
+                    var actorSicil = actionUserId > 0
+                        ? (await context.tb_Kullanici.AsNoTracking()
+                            .Where(u => u.KullaniciID == actionUserId)
+                            .Select(u => u.SicilNo).FirstOrDefaultAsync() ?? "")
+                        : "";
 
-                    await SendToUserBySicilNoAsync(
-                        ticket.KayitSicilNo,
-                        "Ticketınıza Sorumlu Atandı",
-                        $"'{ticket.Baslik}' başlıklı destek talebinize ({ticket.TakipKodu}) sorumlu atandı: {sorumluName}.",
-                        new { type = "ticket", screen = "TicketScreen", id = ticket.ID }
-                    );
+                    var sorumluName = string.IsNullOrEmpty(ticket.SorumluSicilNo)
+                        ? ""
+                        : (await context.tb_Personel.AsNoTracking()
+                            .Where(p => p.SicilNo == ticket.SorumluSicilNo)
+                            .Select(p => p.AdSoyad).FirstOrDefaultAsync() ?? ticket.SorumluSicilNo);
 
-                    await SendToUserBySicilNoAsync(
-                        ticket.SorumluSicilNo,
-                        "Size Yeni Ticket Atandı",
-                        $"'{ticket.Baslik}' başlıklı ticket ({ticket.TakipKodu}) size atandı.",
-                        new { type = "ticket", screen = "TicketScreen", id = ticket.ID }
-                    );
+                    // Atanan kişiye özel bildirim (işlemi kendisi yaptıysa gitmez)
+                    if (!string.IsNullOrEmpty(ticket.SorumluSicilNo)
+                        && !string.Equals(ticket.SorumluSicilNo, actorSicil, StringComparison.OrdinalIgnoreCase))
+                    {
+                        await SendToUserBySicilNoAsync(
+                            ticket.SorumluSicilNo,
+                            "Size Yeni Ticket Atandı",
+                            $"'{ticket.Baslik}' başlıklı ticket ({ticket.TakipKodu}) size atandı.",
+                            new { type = "ticket", screen = "TicketScreen", id = ticket.ID }
+                        );
+                    }
+
+                    // Kayıt sahibine bilgi; sahip de yoksa/işlemi yapan ise TICKET admin'lerine düş
+                    var digerAlicilar = await ResolveRecipientsAsync(context, actorSicil, "TICKET", ticket.KayitSicilNo);
+                    foreach (var sicil in digerAlicilar)
+                    {
+                        if (string.Equals(sicil, ticket.SorumluSicilNo, StringComparison.OrdinalIgnoreCase)) continue;
+                        await SendToUserBySicilNoAsync(
+                            sicil,
+                            "Ticketınıza Sorumlu Atandı",
+                            $"'{ticket.Baslik}' başlıklı destek talebine ({ticket.TakipKodu}) sorumlu atandı: {sorumluName}.",
+                            new { type = "ticket", screen = "TicketScreen", id = ticket.ID }
+                        );
+                    }
                 }
             }
             catch (Exception ex)
@@ -816,10 +873,13 @@ namespace OyemCore.BusinessLayer.Services
 
                     if (actionUser.SicilNo == ticket.KayitSicilNo)
                     {
-                        if (!string.IsNullOrEmpty(ticket.SorumluSicilNo))
+                        // Kayıt sahibi işlem yaptı → sorumluya; sorumlu yoksa TICKET admin'lerine
+                        var alicilar = await ResolveRecipientsAsync(
+                            context, actionUser.SicilNo, "TICKET", ticket.SorumluSicilNo);
+                        foreach (var sicil in alicilar)
                         {
                             await SendToUserBySicilNoAsync(
-                                ticket.SorumluSicilNo,
+                                sicil,
                                 title,
                                 body,
                                 new { type = "ticket", screen = "TicketScreen", id = ticket.ID }
@@ -880,10 +940,13 @@ namespace OyemCore.BusinessLayer.Services
 
                     if (actionUser.SicilNo == ticket.KayitSicilNo)
                     {
-                        if (!string.IsNullOrEmpty(ticket.SorumluSicilNo))
+                        // Kayıt sahibi işlem yaptı → sorumluya; sorumlu yoksa TICKET admin'lerine
+                        var alicilar = await ResolveRecipientsAsync(
+                            context, actionUser.SicilNo, "TICKET", ticket.SorumluSicilNo);
+                        foreach (var sicil in alicilar)
                         {
                             await SendToUserBySicilNoAsync(
-                                ticket.SorumluSicilNo,
+                                sicil,
                                 title,
                                 body,
                                 new { type = "ticket", screen = "TicketScreen", id = ticket.ID }

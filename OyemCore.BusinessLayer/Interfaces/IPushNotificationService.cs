@@ -35,7 +35,7 @@ namespace OyemCore.BusinessLayer.Interfaces
 
         // Ticketing (Ticket)
         Task NotifyNewTicketAsync(int ticketId);
-        Task NotifyTicketSorumluAtandiAsync(int ticketId);
+        Task NotifyTicketSorumluAtandiAsync(int ticketId, int actionUserId = 0);
         Task NotifyTicketStatusChangedAsync(int ticketId, string oldStatus, string newStatus, int actionUserId);
         Task NotifyTicketGelismeAsync(int ticketId, int actionUserId, string comment);
         Task NotifyTicketDeletedAsync(string kayitSicil, string sorumluSicil, string takipKodu, string baslik, string silenAdSoyad, string silenSicil);

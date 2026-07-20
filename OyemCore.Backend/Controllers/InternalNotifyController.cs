@@ -49,7 +49,7 @@ namespace OyemCore.Backend.Controllers
                     await _pushService.NotifyNewTicketAsync(dto.TicketId);
                     break;
                 case "sorumluatandi":
-                    await _pushService.NotifyTicketSorumluAtandiAsync(dto.TicketId);
+                    await _pushService.NotifyTicketSorumluAtandiAsync(dto.TicketId, dto.ActionUserId);
                     break;
                 case "statuschanged":
                     await _pushService.NotifyTicketStatusChangedAsync(dto.TicketId, dto.OldStatus, dto.NewStatus, dto.ActionUserId);
