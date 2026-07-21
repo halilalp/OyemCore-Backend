@@ -240,7 +240,7 @@ namespace OyemCore.BusinessLayer.Services
                                          p.Eposta
                                      }).ToList();
 
-            // Onay Ge?misi ve Aktif Onayci
+            // Onay Geçmişi ve Aktif Onayci
             var onayList = (from a in _context.tb_TalepAmir
                             join p in _context.tb_Personel on a.AmirSicil equals p.SicilNo
                             where a.TalepKodu == code
@@ -257,7 +257,7 @@ namespace OyemCore.BusinessLayer.Services
 
             var activeOnay = onayList.FirstOrDefault(o => o.Durum == null);
 
-            // Soru Ge?misi ve Aktif Cevaplanmamis Soru
+            // Soru Geçmişi ve Aktif Cevaplanmamis Soru
             var soruList = (from sc in _context.tb_TalepSoruCevap
                             join p in _context.tb_Personel on sc.Sicil equals p.SicilNo
                             join gSoru in _context.tb_TalepGelisme on sc.SoruTalepGelismeID equals gSoru.TalepGelismeID into gSoruLeft
@@ -434,7 +434,7 @@ namespace OyemCore.BusinessLayer.Services
                     else
                     {
                         var existing = _context.tb_Talep.FirstOrDefault(t => t.TalepID == request.TalepID);
-                        if (existing == null) throw new InvalidOperationException("G?ncellenecek talep bulunamadi.");
+                        if (existing == null) throw new InvalidOperationException("Güncellenecek talep bulunamadı.");
 
                         existing.KategoriID = request.KategoriID;
                         existing.AltKategoriID = request.AltKategoriID;
@@ -612,7 +612,7 @@ namespace OyemCore.BusinessLayer.Services
             var gelisme = new tb_TalepGelisme
             {
                 TalepKodu = t.TalepKodu,
-                Aciklama = $"[SISTEM] Talep, {amir.AdSoyad} onayina g?nderildi.",
+                Aciklama = $"[SISTEM] Talep, {amir.AdSoyad} onayına gönderildi.",
                 Sicil = user.SicilNo,
                 Eposta = user.Eposta,
                 KayitTar = DateTime.Now
@@ -623,7 +623,7 @@ namespace OyemCore.BusinessLayer.Services
             _ = _pushNotificationService.SendToUserBySicilNoAsync(
                 amirSicil,
                 $"{(t.TalepTurKodu == "BAKIM" ? "Bakim" : t.TalepTurKodu)} Talebi Onay Istegi",
-                $"'{t.Konu}' konulu talep ({t.TalepKodu}) onayiniz i?in g?nderildi.",
+                $"'{t.Konu}' konulu talep ({t.TalepKodu}) onayınıza gönderildi.",
                 new { type = t.TalepTurKodu, screen = "TalepScreen", code = t.TalepKodu, id = t.TalepID }
             );
 
@@ -654,7 +654,7 @@ namespace OyemCore.BusinessLayer.Services
             var gelisme = new tb_TalepGelisme
             {
                 TalepKodu = t.TalepKodu,
-                Aciklama = $"[SISTEM] Islem onayi geri ?ekildi (Onay bekleyen kisi: {amirAd}).",
+                Aciklama = $"[SISTEM] İşlem onayı geri çekildi (Onay bekleyen kişi: {amirAd}).",
                 Sicil = user.SicilNo,
                 Eposta = user.Eposta,
                 KayitTar = DateTime.Now
@@ -830,7 +830,7 @@ namespace OyemCore.BusinessLayer.Services
             var gelisme = new tb_TalepGelisme
             {
                 TalepKodu = t.TalepKodu,
-                Aciklama = $"[SISTEM] {helperName} yardimci personel listesinden ?ikarildi.",
+                Aciklama = $"[SISTEM] {helperName} yardımcı personel listesinden çıkarıldı.",
                 Sicil = user.SicilNo,
                 Eposta = user.Eposta,
                 KayitTar = DateTime.Now
