@@ -229,12 +229,12 @@ namespace OyemCore.Backend.Controllers
             try
             {
                 var success = _adminService.SortProjects(sortedIds);
-                if (!success) return BadRequest(new { message = "Proje siralamasi g?ncellenemedi." });
-                return Ok(new { message = "Siralama g?ncellendi." });
+                if (!success) return BadRequest(new { message = "Proje siralamasi güncellenemedi." });
+                return Ok(new { message = "Siralama güncellendi." });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"Siralama g?ncellenirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Siralama güncellenirken hata olustu: {ex.Message}" });
             }
         }
 
@@ -308,12 +308,12 @@ namespace OyemCore.Backend.Controllers
             try
             {
                 var success = _adminService.SortPages(sortedIds);
-                if (!success) return BadRequest(new { message = "Sayfa siralamasi g?ncellenemedi." });
-                return Ok(new { message = "Siralama g?ncellendi." });
+                if (!success) return BadRequest(new { message = "Sayfa siralamasi güncellenemedi." });
+                return Ok(new { message = "Siralama güncellendi." });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"Siralama g?ncellenirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Siralama güncellenirken hata olustu: {ex.Message}" });
             }
         }
 
@@ -437,7 +437,7 @@ namespace OyemCore.Backend.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"Belge tarih?esi alinirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Belge tarihçesi alinirken hata olustu: {ex.Message}" });
             }
         }
 
@@ -603,7 +603,7 @@ namespace OyemCore.Backend.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"??ifre g?ncellenirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Şifre güncellenirken hata olustu: {ex.Message}" });
             }
         }
 
@@ -735,7 +735,7 @@ namespace OyemCore.Backend.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"Talep t?rleri alinirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Talep türleri alinirken hata olustu: {ex.Message}" });
             }
         }
 
@@ -749,7 +749,7 @@ namespace OyemCore.Backend.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"??irket listesi alinirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Şirket listesi alinirken hata olustu: {ex.Message}" });
             }
         }
 
@@ -801,7 +801,7 @@ namespace OyemCore.Backend.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"Belge tarih?esi listelenirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Belge tarihçesi listelenirken hata olustu: {ex.Message}" });
             }
         }
     }

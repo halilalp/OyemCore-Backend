@@ -201,7 +201,7 @@ namespace OyemCore.Backend.Controllers
             }
 
             await pushNotificationService.SendToUserBySicilNoAsync(sicilNo, title, body, new { screen = "HomeScreen" });
-            return Ok(new { message = $"SicilNo {sicilNo} i?in push bildirim tetiklendi." });
+            return Ok(new { message = $"SicilNo {sicilNo} için push bildirim tetiklendi." });
         }
 
         [AllowAnonymous]

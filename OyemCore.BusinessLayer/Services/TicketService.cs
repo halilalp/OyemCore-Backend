@@ -217,13 +217,13 @@ namespace OyemCore.BusinessLayer.Services
 
                 _context.SaveChanges();
 
-                BelgeTarihceKaydet(ticket.TakipKodu, "Ticket Olusturuldu", $"Yeni kayit a?ildi. (Yapan: {usr.AdSoyad})");
+                BelgeTarihceKaydet(ticket.TakipKodu, "Ticket Olusturuldu", $"Yeni kayit açıldı. (Yapan: {usr.AdSoyad})");
                 _ = _pushNotificationService.NotifyNewTicketAsync(ticket.ID);
             }
             else
             {
                 var existing = _context.tb_Ticket.FirstOrDefault(t => t.ID == ticket.ID);
-                if (existing == null) throw new InvalidOperationException("G?ncellenecek ticket bulunamadi.");
+                if (existing == null) throw new InvalidOperationException("Güncellenecek ticket bulunamadi.");
 
                 string eskiDurum = existing.SurecDurumu;
 
@@ -241,7 +241,7 @@ namespace OyemCore.BusinessLayer.Services
 
                 if (eskiDurum != ticket.SurecDurumu)
                 {
-                    BelgeTarihceKaydet(existing.TakipKodu, "Durum G?ncellendi", $"Durum '{ticket.SurecDurumu}' olarak g?ncellendi. (Yapan: {usr.AdSoyad})");
+                    BelgeTarihceKaydet(existing.TakipKodu, "Durum Güncellendi", $"Durum '{ticket.SurecDurumu}' olarak güncellendi. (Yapan: {usr.AdSoyad})");
                 }
             }
 
@@ -268,7 +268,7 @@ namespace OyemCore.BusinessLayer.Services
                 t.Sira = maxSira + 1;
                 _context.SaveChanges();
 
-                BelgeTarihceKaydet(t.TakipKodu, "S?re? Degisikligi", $"'{yeniDurum}' asamasina ge?ildi. (Yapan: {usr.AdSoyad})");
+                BelgeTarihceKaydet(t.TakipKodu, "Süre? Degisikligi", $"'{yeniDurum}' asamasina geçildi. (Yapan: {usr.AdSoyad})");
                 _ = _pushNotificationService.NotifyTicketStatusChangedAsync(t.ID, "", yeniDurum, usr.KullaniciID);
 
                 return true;
@@ -498,7 +498,7 @@ namespace OyemCore.BusinessLayer.Services
                         {
                             dt.SurecDurumu = yeniDurum;
                             _context.SaveChanges();
-                            BelgeTarihceKaydet(dt.TakipKodu, "S?re? Degisikligi", $"'{yeniDurum}' asamasina tasindi. (Yapan: {usr.AdSoyad})");
+                            BelgeTarihceKaydet(dt.TakipKodu, "Süre? Degisikligi", $"'{yeniDurum}' asamasina tasindi. (Yapan: {usr.AdSoyad})");
                         }
                     }
 

@@ -120,7 +120,7 @@ namespace OyemCore.BusinessLayer.Services
             string amir1 = amirInfo?.Amir1;
             if (string.IsNullOrEmpty(amir1))
             {
-                throw new InvalidOperationException("Onay amiriniz tanimlanmamis. L?tfen IK ile iletisime ge?iniz.");
+                throw new InvalidOperationException("Onay amiriniz tanimlanmamis. Lütfen IK ile iletisime geçiniz.");
             }
 
             // Generate BelgeNo
@@ -177,7 +177,7 @@ namespace OyemCore.BusinessLayer.Services
 
             _context.SaveChanges();
 
-            BelgeTarihceKaydet(code, "Izin Talebi Olusturuldu", $"Yeni izin talebi a?ildi. (Talep Eden: {user.AdSoyad})");
+            BelgeTarihceKaydet(code, "Izin Talebi Olusturuldu", $"Yeni izin talebi açıldı. (Talep Eden: {user.AdSoyad})");
 
             _ = _pushNotificationService.NotifyNewLeaveRequestAsync(request.IzinOnayID);
 
@@ -293,7 +293,7 @@ namespace OyemCore.BusinessLayer.Services
 
                     _context.SaveChanges();
 
-                    BelgeTarihceKaydet(request.BelgeNo, "Izin Onaylandi", $"Izin talebi amir onaylarindan ge?erek IK onayina sevk edildi. (Son Onaylayan: {user.AdSoyad})");
+                    BelgeTarihceKaydet(request.BelgeNo, "Izin Onaylandi", $"Izin talebi amir onaylarindan geçerek IK onayina sevk edildi. (Son Onaylayan: {user.AdSoyad})");
 
                     _ = _pushNotificationService.NotifyLeaveManagerApprovalsCompletedAsync(request.IzinOnayID);
                 }
@@ -305,7 +305,7 @@ namespace OyemCore.BusinessLayer.Services
                     request.SonDurumBilgi = $"{nextAmirName} Onay Kutusunda ({DateTime.Now:dd.MM.yyyy HH:mm})";
                     _context.SaveChanges();
 
-                    BelgeTarihceKaydet(request.BelgeNo, "Izin Kismi Onay", $"Izin talebi onaylandi, bir sonraki onay asamasina ge?ildi. (Onaylayan: {user.AdSoyad})");
+                    BelgeTarihceKaydet(request.BelgeNo, "Izin Kismi Onay", $"Izin talebi onaylandi, bir sonraki onay asamasina geçildi. (Onaylayan: {user.AdSoyad})");
 
                     _ = _pushNotificationService.NotifyNewLeaveRequestAsync(request.IzinOnayID);
                 }

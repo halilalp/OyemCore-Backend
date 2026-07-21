@@ -490,7 +490,7 @@ namespace OyemCore.Backend.Controllers
         /// <summary>
         /// Bakim genel dashboard/KPI rapor verilerini getirir.
         /// </summary>
-        /// <param name="yillar">Virg?lle ayrilmis yillar listesi (?rn: "2026").</param>
+        /// <param name="yillar">Virgülle ayrılmış yıllar listesi (örn: "2026").</param>
         /// <param name="sirket">??irket kodu filtresi.</param>
         /// <returns>Dashboard/KPI istatistik verilerini d?ner.</returns>
         [HttpGet("rapor/dashboard")]

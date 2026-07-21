@@ -48,7 +48,7 @@ namespace OyemCore.Backend.Controllers
             {
                 if (string.IsNullOrEmpty(tur))
                 {
-                    return BadRequest(new { message = "Talep t?r? belirtilmelidir (IT, ERP)." });
+                    return BadRequest(new { message = "Talep türü belirtilmelidir (IT, ERP)." });
                 }
                 int userId = GetCurrentUserId();
                 var list = _talepService.GetRequests(userId, tur);
@@ -72,7 +72,7 @@ namespace OyemCore.Backend.Controllers
             {
                 if (string.IsNullOrEmpty(tur))
                 {
-                    return BadRequest(new { message = "Talep t?r? belirtilmelidir." });
+                    return BadRequest(new { message = "Talep türü belirtilmelidir." });
                 }
                 var list = _talepService.GetCategories(tur);
                 return Ok(list);
@@ -185,7 +185,7 @@ namespace OyemCore.Backend.Controllers
             {
                 if (request == null)
                 {
-                    return BadRequest(new { message = "Ge?ersiz istek verisi." });
+                    return BadRequest(new { message = "Geçersiz istek verisi." });
                 }
                 int userId = GetCurrentUserId();
                 bool success = _talepService.ApproveOrRejectRequest(userId, id, request.Approve, request.Comment);
@@ -302,7 +302,7 @@ namespace OyemCore.Backend.Controllers
             {
                 if (dto == null || dto.Talep == null)
                 {
-                    return BadRequest(new { message = "Ge?ersiz talep verisi." });
+                    return BadRequest(new { message = "Geçersiz talep verisi." });
                 }
                 int userId = GetCurrentUserId();
                 string code = _talepService.SaveRequest(userId, dto.Talep, dto.Bakim);
@@ -327,7 +327,7 @@ namespace OyemCore.Backend.Controllers
             {
                 if (request == null || string.IsNullOrEmpty(request.Status))
                 {
-                    return BadRequest(new { message = "Ge?ersiz durum verisi." });
+                    return BadRequest(new { message = "Geçersiz durum verisi." });
                 }
                 int userId = GetCurrentUserId();
                 bool success = _talepService.UpdateRequestStatus(userId, id, request.Status);
@@ -352,7 +352,7 @@ namespace OyemCore.Backend.Controllers
             {
                 if (request == null || string.IsNullOrEmpty(request.SicilNo))
                 {
-                    return BadRequest(new { message = "Ge?ersiz sicil numarasi." });
+                    return BadRequest(new { message = "Geçersiz sicil numarasi." });
                 }
                 int userId = GetCurrentUserId();
                 bool success = _talepService.AssignRequest(userId, id, request.SicilNo);
@@ -377,7 +377,7 @@ namespace OyemCore.Backend.Controllers
             {
                 if (request == null || string.IsNullOrEmpty(request.Aciklama))
                 {
-                    return BadRequest(new { message = "A?iklama bos birakilamaz." });
+                    return BadRequest(new { message = "Açıklama bos birakilamaz." });
                 }
                 int userId = GetCurrentUserId();
                 bool success = _talepService.AddRequestGelisme(userId, id, request.Aciklama, request.DosyaUrl);
@@ -454,7 +454,7 @@ namespace OyemCore.Backend.Controllers
             {
                 if (string.IsNullOrEmpty(tur))
                 {
-                    return BadRequest(new { message = "Talep t?r? belirtilmelidir." });
+                    return BadRequest(new { message = "Talep türü belirtilmelidir." });
                 }
                 var list = _talepService.GetPersonels(tur);
                 return Ok(list);

@@ -91,7 +91,7 @@ namespace OyemCore.BusinessLayer.Services
             {
                 int userId = model.KullaniciID > 0 ? model.KullaniciID : existingUser.KullaniciID;
                 var user = _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == userId);
-                if (user == null) return (false, "G?ncellenecek kullanici bulunamadi.", null);
+                if (user == null) return (false, "Güncellenecek kullanici bulunamadi.", null);
 
                 user.AdSoyad = model.AdSoyad;
                 user.Unvan = model.Unvan;
@@ -108,7 +108,7 @@ namespace OyemCore.BusinessLayer.Services
                 }
 
                 _context.SaveChanges();
-                return (true, "Kullanici basariyla g?ncellendi.", userId);
+                return (true, "Kullanici basariyla güncellendi.", userId);
             }
             else
             {
@@ -277,7 +277,7 @@ namespace OyemCore.BusinessLayer.Services
         {
             if (_context.tb_Sayfa.Any(s => s.ProjeID == id))
             {
-                return (false, "Bu projeye bagli sayfalar oldugu i?in silinemez. ?nce sayfalari silmelisiniz.");
+                return (false, "Bu projeye bagli sayfalar oldugu için silinemez. Önce sayfalari silmelisiniz.");
             }
 
             var project = _context.tb_Proje.FirstOrDefault(p => p.ProjeID == id);
@@ -369,7 +369,7 @@ namespace OyemCore.BusinessLayer.Services
         {
             if (_context.tb_KullaniciYetki.Any(k => k.SayfaID == id))
             {
-                return (false, "Bu sayfaya ait kullanici yetkileri bulunmaktadir. ?nce ilgili yetkileri silmelisiniz.");
+                return (false, "Bu sayfaya ait kullanici yetkileri bulunmaktadir. Önce ilgili yetkileri silmelisiniz.");
             }
 
             var page = _context.tb_Sayfa.FirstOrDefault(s => s.SayfaID == id);
@@ -439,7 +439,7 @@ namespace OyemCore.BusinessLayer.Services
                     Eposta = currentUser.Eposta,
                     SicilNo = currentUser.SicilNo,
                     Konu = "LOG [Mobil]",
-                    Aciklama = $"Kullanici Yetkileri G?ncellendi. (KullaniciID:{userId})",
+                    Aciklama = $"Kullanici Yetkileri Güncellendi. (KullaniciID:{userId})",
                     KayitTar = DateTime.Now
                 };
                 _context.tb_Log.Add(log);
@@ -707,23 +707,23 @@ namespace OyemCore.BusinessLayer.Services
 
         private static readonly List<(string Kod, string Tanim, string Aciklama)> StaticDocumentTypes = new List<(string, string, string)>
         {
-            ("ADAY", "Ise Alim Sorumlusu", "Ise alim talepleri, aday degerlendirmeleri ve m?lakat takip s?re?lerini y?neten IK personeli yetkisidir."),
-            ("ARGE", "Ar-Ge Proje Y?neticisi", "Ar-Ge projeleri, kaynak planlama ve proje toplanti takip s?re?lerini y?neten yetkilidir."),
+            ("ADAY", "Ise Alim Sorumlusu", "Ise alim talepleri, aday degerlendirmeleri ve mülakat takip süreçlerini yöneten IK personeli yetkisidir."),
+            ("ARGE", "Ar-Ge Proje Yöneticisi", "Ar-Ge projeleri, kaynak planlama ve proje toplanti takip süreçlerini yöneten yetkilidir."),
             ("BAKIM", "Bakim Departmani Sorumlusu", "Makine, tesis, ekipman ariza ve periyodik bakim taleplerini atayan ve onaylayan yetkilidir."),
-            ("BAKIMADMIN", "Bakim Departmani Y?neticisi", "T?m sirketlere ait Makine, tesis, ekipman ariza ve periyodik bakim taleplerini atayan ve onaylayan yetkilidir."),
-            ("ERP", "ERP Sistem Sorumlusu", "ERP sistemi yetkilendirme, mod?l aktivasyon ve destek taleplerini y?neten yetkilidir."),
-            ("GENELMUDUR", "Genel M?d?r", "Satinalma onay s?re?leri (GMONAY) basta olmak ?zere portal genelindeki en ?st d?zey onay ve y?netim yetkisidir."),
-            ("IK", "Insan Kaynaklari Y?neticisi", "Izin talepleri, aday ise alim, IK form onay s?re?lerini y?neten yetkilidir."),
-            ("ISG", "ISG Sorumlusu", "Is Sagligi ve G?venligi risk analizleri, kaza raporlari ve ISG talep/destek s?re?lerini y?neten yetkilidir."),
-            ("IT", "BT (Bilgi Teknolojileri) Y?n.", "BT donanim, yazilim, e-posta ve HelpDesk destek taleplerini atayan ve ??z?mleyen yetkilidir."),
-            ("KALITE", "Kalite G?vence Sorumlusu", "Kalite d?k?mantasyonu, i?/dis denetimler ve Tedarik?i Degerlendirme onay s?re?lerini y?neten yetkilidir."),
-            ("KITAP", "K?t?phane Sorumlusu", "?alisanlarin kitap/egitim materyali talep s?re?lerini ve kitap teslimlerini y?neten yetkilidir."),
-            ("OPEKS", "Opeks Sorumlusu", "Operasyonel harcamalar, b?t?e asim onaylari ve Opeks iyilestirme projeleri takip yetkisidir."),
-            ("SAT-MD", "Satinalma M?d?r?", "Belirli limitlerin ?zerindeki satinalma tekliflerinin onaylanmasi (MDONAY) ve s?re? takibinden sorumlu m?d?r yetkisidir."),
-            ("SAT-UZ", "Satinalma Uzmani", "Satinalma taleplerine teklif toplama, teklif girisi (TEKLIF) ve siparis olusturma s?re?lerinden sorumlu uzman yetkisidir."),
-            ("TICKET", "Destek Masasi (HelpDesk) Sor.", "Portal genelindeki destek taleplerini (Ticket) departmanlara y?nlendiren ve s?re? takibini yapan genel yetkilidir."),
-            ("URGE", "?r-Ge Proje Sorumlusu", "?r?n Gelistirme (?r-Ge) proje s?re?leri, kaynak planlama ve ilgili toplanti d?k?manlarini y?neten yetkilidir."),
-            ("TLPACIL", "Talep-?nem Seviye Yetkilisi", "Bakim taleplerinde ?nem seviyesini acil olarak girebilen sorumlu yetkisidir.")
+            ("BAKIMADMIN", "Bakim Departmani Yöneticisi", "Tüm sirketlere ait Makine, tesis, ekipman ariza ve periyodik bakim taleplerini atayan ve onaylayan yetkilidir."),
+            ("ERP", "ERP Sistem Sorumlusu", "ERP sistemi yetkilendirme, modül aktivasyon ve destek taleplerini yöneten yetkilidir."),
+            ("GENELMUDUR", "Genel Müdür", "Satinalma onay süreçleri (GMONAY) basta olmak üzere portal genelindeki en üst düzey onay ve yönetim yetkisidir."),
+            ("IK", "Insan Kaynaklari Yöneticisi", "Izin talepleri, aday ise alim, IK form onay süreçlerini yöneten yetkilidir."),
+            ("ISG", "ISG Sorumlusu", "Is Sagligi ve Güvenligi risk analizleri, kaza raporlari ve ISG talep/destek süreçlerini yöneten yetkilidir."),
+            ("IT", "BT (Bilgi Teknolojileri) Yön.", "BT donanim, yazilim, e-posta ve HelpDesk destek taleplerini atayan ve çözümleyen yetkilidir."),
+            ("KALITE", "Kalite Güvence Sorumlusu", "Kalite dökümantasyonu, iç/dış denetimler ve Tedarikçi Degerlendirme onay süreçlerini yöneten yetkilidir."),
+            ("KITAP", "Kütüphane Sorumlusu", "çalışanlarin kitap/egitim materyali talep süreçlerini ve kitap teslimlerini yöneten yetkilidir."),
+            ("OPEKS", "Opeks Sorumlusu", "Operasyonel harcamalar, bütçe asim onaylari ve Opeks iyilestirme projeleri takip yetkisidir."),
+            ("SAT-MD", "Satinalma Müdür?", "Belirli limitlerin üzerindeki satinalma tekliflerinin onaylanmasi (MDONAY) ve süreç takibinden sorumlu müdür yetkisidir."),
+            ("SAT-UZ", "Satinalma Uzmani", "Satinalma taleplerine teklif toplama, teklif girisi (TEKLIF) ve siparis olusturma süreçlerinden sorumlu uzman yetkisidir."),
+            ("TICKET", "Destek Masasi (HelpDesk) Sor.", "Portal genelindeki destek taleplerini (Ticket) departmanlara yönlendiren ve süreç takibini yapan genel yetkilidir."),
+            ("URGE", "Ür-Ge Proje Sorumlusu", "Ürün Gelistirme (Ür-Ge) proje süreçleri, kaynak planlama ve ilgili toplanti dökümanlarini yöneten yetkilidir."),
+            ("TLPACIL", "Talep-önem Seviye Yetkilisi", "Bakim taleplerinde önem seviyesini acil olarak girebilen sorumlu yetkisidir.")
         };
 
         public (bool Success, string Message) UpdateUserPassword(int id, string newPassword)
@@ -736,12 +736,12 @@ namespace OyemCore.BusinessLayer.Services
 
             if (string.IsNullOrEmpty(newPassword) || newPassword.Length < 5)
             {
-                return (false, "??ifre en az 5 karakter olmalidir.");
+                return (false, "Şifre en az 5 karakter olmalidir.");
             }
 
             user.Sifre = SecurityHelper.EncryptPassword(newPassword);
             _context.SaveChanges();
-            return (true, "??ifre basariyla g?ncellendi.");
+            return (true, "Şifre basariyla güncellendi.");
         }
 
         public IEnumerable<object> GetUserDocumentTypes(int userId)
@@ -773,7 +773,7 @@ namespace OyemCore.BusinessLayer.Services
             }
 
             _context.SaveChanges();
-            return (true, "Y?netici ayarlari basariyla kaydedildi.");
+            return (true, "Yönetici ayarlari basariyla kaydedildi.");
         }
 
         public IEnumerable<object> GetHelpDeskCategories(string search, string categoryId, string typeCode)
@@ -861,7 +861,7 @@ namespace OyemCore.BusinessLayer.Services
         public (bool Success, string Message) SaveHelpDeskCategory(tb_TalepKategori model)
         {
             if (string.IsNullOrEmpty(model.Tanim)) return (false, "Kategori tanimi bos olamaz.");
-            if (string.IsNullOrEmpty(model.TalepTurKodu)) return (false, "Talep t?r? se?ilmelidir.");
+            if (string.IsNullOrEmpty(model.TalepTurKodu)) return (false, "Talep türü seçilmelidir.");
 
             if (model.TalepKategoriID > 0)
             {
@@ -899,7 +899,7 @@ namespace OyemCore.BusinessLayer.Services
 
         public (bool Success, string Message) SaveCategoryResponsible(tb_TalepAyar model)
         {
-            if (string.IsNullOrEmpty(model.SicilNo)) return (false, "Personel se?ilmelidir.");
+            if (string.IsNullOrEmpty(model.SicilNo)) return (false, "Personel seçilmelidir.");
             if (!model.KategoriID.HasValue) return (false, "Kategori ID belirtilmelidir.");
 
             bool exists = _context.tb_TalepAyar.Any(a => a.KategoriID == model.KategoriID
@@ -907,7 +907,7 @@ namespace OyemCore.BusinessLayer.Services
                                                     && a.SirketKodu == model.SirketKodu);
             if (exists)
             {
-                return (false, "Bu personel bu sirket i?in bu kategoriye zaten atanmis.");
+                return (false, "Bu personel bu sirket için bu kategoriye zaten atanmis.");
             }
 
             _context.tb_TalepAyar.Add(model);

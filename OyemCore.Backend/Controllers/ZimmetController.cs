@@ -89,7 +89,7 @@ namespace OyemCore.Backend.Controllers
 
                 if (aygit.ZimmetliSicil != user.SicilNo)
                 {
-                    return BadRequest(new { message = "Sadece kendi ?zerinize zimmetli demirbaslar i?in hata bildirebilirsiniz." });
+                    return BadRequest(new { message = "Sadece kendi üzerinize zimmetli demirbaslar için hata bildirebilirsiniz." });
                 }
 
                 aygit.HataBildir = true;
@@ -257,7 +257,7 @@ namespace OyemCore.Backend.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"Zimmet ge?misi alinirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Zimmet geçmisi alinirken hata olustu: {ex.Message}" });
             }
         }
 
@@ -364,7 +364,7 @@ namespace OyemCore.Backend.Controllers
                 {
                     _ = _pushNotificationService.NotifyAssetReturnedAsync(activeHistory.AygitPersonelID, currentUser.KullaniciID);
                 }
-                return Ok(new { success = true, message = "Zimmet basariyla iade alindi ve bosa ?ikarildi." });
+                return Ok(new { success = true, message = "Zimmet basariyla iade alindi ve bosa çıkarildi." });
             }
             catch (Exception ex)
             {
@@ -527,11 +527,11 @@ namespace OyemCore.Backend.Controllers
                 asset.MasrafMerkezi = model.MasrafMerkezi;
 
                 _context.SaveChanges();
-                return Ok(new { success = true, message = "Demirbas basariyla g?ncellendi." });
+                return Ok(new { success = true, message = "Demirbas basariyla güncellendi." });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"Demirbas g?ncellenirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Demirbas güncellenirken hata olustu: {ex.Message}" });
             }
         }
 
@@ -587,7 +587,7 @@ namespace OyemCore.Backend.Controllers
                 var currentUser = GetCurrentUser();
                 if (string.IsNullOrEmpty(model.Code))
                 {
-                    return BadRequest(new { message = "L?tfen barkod veya demirbas kodu giriniz." });
+                    return BadRequest(new { message = "Lütfen barkod veya demirbas kodu giriniz." });
                 }
 
                 var asset = _context.tb_Aygit.FirstOrDefault(a => 
@@ -638,13 +638,13 @@ namespace OyemCore.Backend.Controllers
                 {
                     _context.tb_SayimAygit.Remove(sayim);
                     _context.SaveChanges();
-                    return Ok(new { success = true, message = "Demirbas sayimdan ?ikarildi." });
+                    return Ok(new { success = true, message = "Demirbas sayimdan çıkarildi." });
                 }
                 return NotFound(new { message = "Sayilan demirbas kaydi bulunamadi." });
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"Sayimdan ?ikarilirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Sayimdan çıkarilirken hata olustu: {ex.Message}" });
             }
         }
     }

@@ -128,7 +128,7 @@ namespace OyemCore.Backend.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"Tedarik?i degerlendirme listesi alinirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Tedarikçi degerlendirme listesi alinirken hata olustu: {ex.Message}" });
             }
         }
 
@@ -298,7 +298,7 @@ namespace OyemCore.Backend.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"Tarih?e alinirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Tarihçe alinirken hata olustu: {ex.Message}" });
             }
         }
 
@@ -382,7 +382,7 @@ namespace OyemCore.Backend.Controllers
                 var currentUser = GetCurrentUser();
                 var deg = _context.tb_TedDeg.FirstOrDefault(o => o.BelgeNo == model.BelgeNo);
                 if (deg == null) return NotFound(new { message = "Kayit bulunamadi." });
-                if (deg.Durum == true) return BadRequest(new { message = "Tamamlanmis bir degerlendirme ?zerinde degisiklik yapamazsiniz." });
+                if (deg.Durum == true) return BadRequest(new { message = "Tamamlanmis bir degerlendirme üzerinde degisiklik yapamazsiniz." });
 
                 List<ParamDegerDto> islemList = new List<ParamDegerDto>();
                 if (!string.IsNullOrEmpty(model.ID))
@@ -531,7 +531,7 @@ namespace OyemCore.Backend.Controllers
                         Aciklama = $"(Ist. Tes. Tar.) Eski: {eskiistTar} - Yeni: {model.IstTar} * (Ger?. Tes. Tar.) Eski: {eskigerTar} - Yeni: {model.GerTar} (Islem Yapan: {currentUser.AdSoyad})",
                         BelgeKodu = model.BelgeNo,
                         KayitTar = DateTime.Now,
-                        Konu = "Istenen/Ger?eklesen Teslim Tarihi Degisti. [Mobil]"
+                        Konu = "Istenen/Gerçeklesen Teslim Tarihi Degisti. [Mobil]"
                     });
                 }
 
@@ -550,7 +550,7 @@ namespace OyemCore.Backend.Controllers
                 {
                     if (deg.IstekTar > deg.GelisTar)
                     {
-                        return BadRequest(new { message = "Istenilen Teslim Tarihi Ger?eklesme Tarihinden Sonra Olamaz." });
+                        return BadRequest(new { message = "Istenilen Teslim Tarihi Gerçeklesme Tarihinden Sonra Olamaz." });
                     }
 
                     int GunFark = (deg.GelisTar.Value.Date - deg.IstekTar.Value.Date).Days;
@@ -641,7 +641,7 @@ namespace OyemCore.Backend.Controllers
                 _context.tb_BelgeTarihce.Add(new tb_BelgeTarihce
                 {
                     BelgeKodu = belgeNo,
-                    Konu = "Tedarik?i Degerlendirme Islemi Tamamlandi. [Mobil]",
+                    Konu = "Tedarikçi Degerlendirme Islemi Tamamlandi. [Mobil]",
                     Aciklama = $"Islem Yapan: {currentUser.AdSoyad}",
                     KayitTar = DateTime.Now
                 });
@@ -710,7 +710,7 @@ namespace OyemCore.Backend.Controllers
                 _context.tb_BelgeTarihce.Add(new tb_BelgeTarihce
                 {
                     BelgeKodu = belgeNo,
-                    Konu = "Tedarik?i Degerlendirme Islemi Iptal Edildi. [Mobil]",
+                    Konu = "Tedarikçi Degerlendirme Islemi Iptal Edildi. [Mobil]",
                     Aciklama = $"Islem Yapan: {currentUser.AdSoyad}",
                     KayitTar = DateTime.Now
                 });
@@ -749,15 +749,15 @@ namespace OyemCore.Backend.Controllers
                 var currentUser = GetCurrentUser();
 
                 if (string.IsNullOrEmpty(model.Tedarikci))
-                    return BadRequest(new { message = "Tedarik?i se?iniz." });
+                    return BadRequest(new { message = "Tedarikçi seçiniz." });
                 if (string.IsNullOrEmpty(model.TurKod))
-                    return BadRequest(new { message = "Faaliyet alani se?iniz." });
+                    return BadRequest(new { message = "Faaliyet alani seçiniz." });
                 if (string.IsNullOrEmpty(model.IstTarih))
-                    return BadRequest(new { message = "Istenen teslim tarihi se?iniz." });
+                    return BadRequest(new { message = "Istenen teslim tarihi seçiniz." });
                 if (string.IsNullOrEmpty(model.KayitTarih))
-                    return BadRequest(new { message = "Kayit tarihi se?iniz." });
+                    return BadRequest(new { message = "Kayit tarihi seçiniz." });
                 if (string.IsNullOrEmpty(model.MahsulYil))
-                    return BadRequest(new { message = "Mahsul yili se?iniz." });
+                    return BadRequest(new { message = "Mahsul yili seçiniz." });
 
                 var talep = new tb_TedDeg
                 {
@@ -793,7 +793,7 @@ namespace OyemCore.Backend.Controllers
                 _context.tb_BelgeTarihce.Add(new tb_BelgeTarihce
                 {
                     BelgeKodu = talep.BelgeNo,
-                    Konu = "Tedarik?i Degerlendirme Kaydi Olusturuldu. [Mobil]",
+                    Konu = "Tedarikçi Degerlendirme Kaydi Olusturuldu. [Mobil]",
                     Aciklama = $"Kayit Sahibi: {currentUser.AdSoyad}",
                     KayitTar = DateTime.Now
                 });

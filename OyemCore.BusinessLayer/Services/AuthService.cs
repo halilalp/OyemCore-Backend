@@ -56,7 +56,7 @@ namespace OyemCore.BusinessLayer.Services
                     if (usrManual.Durum == false)
                     {
                         LogKaydet(usrManual.Eposta, usrManual.SicilNo, "LOG_HATA", $"Hatali Giris: Kullanici Pasif (Manuel) - Kullanici: {username}{info}");
-                        return (false, null, "Kullanici Pasif Durumda. L?tfen Bilgi Islem departmani ile iletisime ge?iniz.");
+                        return (false, null, "Kullanici Pasif Durumda. Lütfen Bilgi Islem departmani ile iletisime geçiniz.");
                     }
 
                     string token = GenerateJwtToken(usrManual);
@@ -81,7 +81,7 @@ namespace OyemCore.BusinessLayer.Services
                     if (per == null)
                     {
                         LogKaydet(eposta, "", "LOG_HATA", $"Hatali Giris: Netsis datasi bulunamadi. Eposta: {eposta}{info}");
-                        return (false, null, $"E-Postaya ait Netsis datasi bulunamadi. L?tfen IK departmani ile iletisime ge?iniz. ({eposta})");
+                        return (false, null, $"E-Postaya ait Netsis datasi bulunamadi. Lütfen IK departmani ile iletisime geçiniz. ({eposta})");
                     }
 
                     var usrAD = _context.tb_Kullanici
@@ -92,7 +92,7 @@ namespace OyemCore.BusinessLayer.Services
                         if (usrAD.Durum == false)
                         {
                             LogKaydet(usrAD.Eposta, usrAD.SicilNo, "LOG_HATA", $"Hatali Giris: Kullanici Pasif (AD) - Eposta: {eposta}{info}");
-                            return (false, null, "Kullanici Pasif Durumda. L?tfen Bilgi Islem departmani ile iletisime ge?iniz.");
+                            return (false, null, "Kullanici Pasif Durumda. Lütfen Bilgi Islem departmani ile iletisime geçiniz.");
                         }
 
                         // Update details
@@ -163,7 +163,7 @@ namespace OyemCore.BusinessLayer.Services
                 }
 
                 LogKaydet("", "", "LOG_HATA", $"Hatali Giris: Tanimsiz Hata - Girilen: {username}{info}");
-                return (false, null, "Kullanici Adi/??ifre bilgileri dogru degil.");
+                return (false, null, "Kullanici Adi/Şifre bilgileri dogru degil.");
             }
             catch (Exception ex)
             {
@@ -190,7 +190,7 @@ namespace OyemCore.BusinessLayer.Services
                     string emailPrefix = user.Eposta.Split('@')[0];
                     if (user.Eposta.Contains(username, StringComparison.OrdinalIgnoreCase) || emailPrefix.Equals(username, StringComparison.OrdinalIgnoreCase))
                     {
-                        return (false, "Girmeye ?alistiginiz bilgiler Active Directory (Domain) bilgileridir. Bilgisayarinizi a?tiginiz hesap bilgileri ile giris yapabilirsiniz. ??ifre s?reniz dolmus olabilir, l?tfen kontrol ediniz.");
+                        return (false, "Girmeye çalıştiginiz bilgiler Active Directory (Domain) bilgileridir. Bilgisayarinizi açtiginiz hesap bilgileri ile giris yapabilirsiniz. Şifre süreniz dolmus olabilir, lütfen kontrol ediniz.");
                     }
                     return (false, "Kullanici adi veya sicil numarasi hatali.");
                 }
@@ -228,7 +228,7 @@ namespace OyemCore.BusinessLayer.Services
 
                         if (string.IsNullOrEmpty(user.Tel1))
                         {
-                            return (true, "??ifreniz sifirlandi ancak sistemde kayitli cep telefonu numaraniz bulunmadigi i?in SMS g?nderilemedi. L?tfen y?neticinizle iletisime ge?iniz. (Yeni ??ifre Sistem Loglarina Kaydedildi)");
+                            return (true, "Şifreniz sifirlandi ancak sistemde kayitli cep telefonu numaraniz bulunmadigi için SMS gönderilemedi. Lütfen yöneticinizle iletisime geçiniz. (Yeni Şifre Sistem Loglarina Kaydedildi)");
                         }
 
                         try
@@ -252,10 +252,10 @@ namespace OyemCore.BusinessLayer.Services
                         }
                         catch (Exception exSms)
                         {
-                            return (true, $"??ifre sifirlandi fakat SMS g?nderilirken hata olustu: {exSms.Message}");
+                            return (true, $"Şifre sifirlandi fakat SMS gönderilirken hata olustu: {exSms.Message}");
                         }
 
-                        return (true, "??ifreniz basariyla sifirlandi ve kayitli cep telefonunuza SMS olarak g?nderildi.");
+                        return (true, "Şifreniz basariyla sifirlandi ve kayitli cep telefonunuza SMS olarak gönderildi.");
                     }
                     return (false, "Kullanici adi veya sicil numarasi hatali.");
                 }

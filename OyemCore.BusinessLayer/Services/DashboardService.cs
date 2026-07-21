@@ -47,6 +47,10 @@ namespace OyemCore.BusinessLayer.Services
                 var condition = (string)cityNode.Element("Durum") ?? "";
                 string icon = "?";
                 string lowerCond = condition.ToLower();
+                // NOT: Bu blok tamamen bozuk — ikonlar ("??") kayıp emoji, eşleşme
+                // anahtarları ("yagmur", "bulut") ise hava servisinin döndürdüğü
+                // Türkçe metinle ("yağmurlu") eşleşmiyor. Metin onarımı kapsamında
+                // dokunulmadı; doğrusu servis çıktısı görülmeden yazılamaz.
                 if (lowerCond.Contains("g?nes")) icon = "??";
                 else if (lowerCond.Contains("yagmur")) icon = "g????";
                 else if (lowerCond.Contains("bulut")) icon = "??";

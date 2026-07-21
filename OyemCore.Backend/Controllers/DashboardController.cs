@@ -42,7 +42,7 @@ namespace OyemCore.Backend.Controllers
                 var weather = await _dashboardService.GetWeatherAsync(city);
                 if (weather == null)
                 {
-                    return BadRequest(new { message = $"{city} ili i?in hava durumu verisi alinamadi." });
+                    return BadRequest(new { message = $"{city} ili için hava durumu verisi alinamadi." });
                 }
                 return Ok(weather);
             }
@@ -64,13 +64,13 @@ namespace OyemCore.Backend.Controllers
                 var currencies = await _dashboardService.GetCurrenciesAsync();
                 if (currencies == null)
                 {
-                    return BadRequest(new { message = "D?viz kurlari alinamadi." });
+                    return BadRequest(new { message = "Döviz kurlari alinamadi." });
                 }
                 return Ok(currencies);
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"D?viz kurlari alinirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Döviz kurlari alinirken hata olustu: {ex.Message}" });
             }
         }
 
@@ -88,7 +88,7 @@ namespace OyemCore.Backend.Controllers
             }
             catch (Exception ex)
             {
-                return BadRequest(new { message = $"Dogum g?nleri alinirken hata olustu: {ex.Message}" });
+                return BadRequest(new { message = $"Dogum günleri alinirken hata olustu: {ex.Message}" });
             }
         }
 
