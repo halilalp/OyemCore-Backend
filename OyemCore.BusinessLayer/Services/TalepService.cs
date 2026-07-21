@@ -1103,17 +1103,29 @@ namespace OyemCore.BusinessLayer.Services
 
             if (kapatiliyor)
             {
+                // Referans (WebServiceBakim.TalepIslem): kapatilmis talep uzerinden
+                // islem yapilamaz.
+                if (t.Durum == true)
+                    throw new InvalidOperationException("Kapatılan talep üzerinden işlem yapılamaz.");
+
+                // Referans: bekleyen onay sureci varsa islem menusunden kapatilamaz,
+                // once onaylanmasi gerekir.
+                if (_context.tb_TalepAmir.Any(a => a.TalepKodu == t.TalepKodu && a.Durum == null))
+                    throw new InvalidOperationException("Bu talep için bekleyen onay süreci var. Önce onaylanması gerekir.");
+
                 if (string.IsNullOrEmpty(t.SorumluSicil))
                     throw new InvalidOperationException("Sorumlu atanmamış bir talep kapatılamaz.");
 
                 if (t.SorumluSicil != user.SicilNo)
                     throw new InvalidOperationException("Talebi yalnızca sorumlu kişi kapatabilir.");
-                
+
+                // Acik is emri varsa kapatilamaz (tum turler icin gecerli)
+                var acikIsEmri = _context.tb_TalepIsEmri.Any(i => i.TalepKodu == t.TalepKodu && i.KapanmaTar == null);
+                if (acikIsEmri)
+                    throw new InvalidOperationException("Kapatılmamış iş emirleri varken talep kapatılamaz.");
+
                 if (t.TalepTurKodu == "BAKIM")
                 {
-                    var openWorkOrders = _context.tb_TalepIsEmri.Any(i => i.TalepKodu == t.TalepKodu && i.KapanmaTar == null);
-                    if (openWorkOrders)
-                        throw new InvalidOperationException("Kapatılmamış iş emirleri varken talep kapatılamaz.");
 
                     t.Durum = false;
                     var formOnayi = new tb_TalepAmir
