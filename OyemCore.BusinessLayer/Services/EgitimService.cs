@@ -40,7 +40,10 @@ namespace OyemCore.BusinessLayer.Services
                 tarih = x.e.KayitTar != null ? x.e.KayitTar.Value.ToString("dd/MM/yyyy") : "",
                 kategori = x.ek != null ? x.ek.Tanim : "Genel",
                 adSoyad = x.p != null ? x.p.AdSoyad : "[Bulunamadi]",
-                kategoriID = x.e.KategoriID ?? 0
+                kategoriID = x.e.KategoriID ?? 0,
+                // Aciklama projeksiyonda hic yoktu: kartta ve detayda hep bos
+                // gorunuyordu, aciklamada arama da bu yuzden calismiyordu.
+                aciklama = x.e.Aciklama ?? ""
             }).ToList();
         }
 
@@ -69,6 +72,7 @@ namespace OyemCore.BusinessLayer.Services
             var egitim = new tb_Egitim
             {
                 Konu = konu,
+                Aciklama = aciklama,
                 DosyaUrl = dosyaUrl,
                 KategoriID = kategoriID,
                 KayitEposta = user.Eposta,
@@ -92,6 +96,7 @@ namespace OyemCore.BusinessLayer.Services
                 throw new UnauthorizedAccessException("Bu egitimi duzenleme yetkiniz yok.");
 
             egitim.Konu = konu;
+            egitim.Aciklama = aciklama;
             egitim.DosyaUrl = dosyaUrl;
             egitim.KategoriID = kategoriID;
 

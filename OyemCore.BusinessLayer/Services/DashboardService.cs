@@ -239,12 +239,132 @@ namespace OyemCore.BusinessLayer.Services
                             projeID = s.ProjeID,
                             projeAdi = p.ProjeAdi ?? "",
                             ikon = p.Ikon ?? "ki-outline ki-abstract-26",
+                            // Webportal ProjeGetir ile ayni: proje karti tiklaninca
+                            // projenin varsayilan anasayfasina gidilir.
+                            projeAnaSayfa = p.AnaSayfa ?? "",
                             mobilGoster = s.MobilGoster ?? false,
                             mobilUrl = s.MobilUrl,
                             mobilIcon = s.MobilIcon
                         };
 
-            return query.ToList();
+            var rows = query.ToList();
+
+            // Proje kartlarindaki rozet (webportal WebServiceDashboard.BildirimHesapla ile ayni)
+            var bildirimler = ProjeBildirimleriHesapla(userId, rows.Select(r => r.projeID ?? 0).Distinct().ToList());
+
+            return rows.Select(r => new
+            {
+                r.kullaniciID,
+                r.sayfaAdi,
+                r.sayfaUrl,
+                r.projeID,
+                r.projeAdi,
+                r.ikon,
+                r.projeAnaSayfa,
+                projeBildirim = bildirimler.TryGetValue(r.projeID ?? 0, out var b) ? b : "",
+                r.mobilGoster,
+                r.mobilUrl,
+                r.mobilIcon
+            }).ToList<object>();
+        }
+
+        /// <summary>
+        /// Webportal'daki BildirimHesapla'nin birebir karsiligi. Rozeti olmayan
+        /// projeler icin bos string doner (webportal'daki default: return "").
+        /// Kitap Talep (28) ve Satin Alma (35) mobilde olmadigi icin haric.
+        /// </summary>
+        private Dictionary<int, string> ProjeBildirimleriHesapla(int userId, List<int> projeIds)
+        {
+            var sonuc = new Dictionary<int, string>();
+
+            var usr = _context.tb_Kullanici.AsNoTracking().FirstOrDefault(u => u.KullaniciID == userId);
+            if (usr == null) return sonuc;
+
+            var sicil = usr.SicilNo ?? "";
+            // AdminBelgeTur formati yildizla ayrik: "*IT*ERP*ADMIN*"
+            var adminTurler = (usr.AdminBelgeTur ?? "")
+                .Split(new[] { '*' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(t => t.Trim().ToUpperInvariant())
+                .ToHashSet();
+
+            foreach (var projeId in projeIds)
+            {
+                try
+                {
+                    switch (projeId)
+                    {
+                        case 20: // HelpDesk
+                        {
+                            var tur = adminTurler.Contains("IT") ? "IT"
+                                    : adminTurler.Contains("ERP") ? "ERP" : "";
+                            if (tur != "")
+                            {
+                                // yonetici: toplam bekleyen / kendisinde bekleyen
+                                var toplam = _context.tb_Talep.Count(o => o.Durum == false && o.TalepTurKodu == tur);
+                                var bende = _context.tb_Talep.Count(o => o.Durum == false && o.TalepTurKodu == tur && o.SorumluSicil == sicil);
+                                sonuc[projeId] = toplam + "/" + bende;
+                            }
+                            else
+                            {
+                                sonuc[projeId] = _context.tb_TalepAmir
+                                    .Count(o => o.Durum == null && o.AmirSicil == sicil).ToString();
+                            }
+                            break;
+                        }
+
+                        case 22: // Bakim Yonetimi
+                        {
+                            if (adminTurler.Contains("BAKIM"))
+                            {
+                                if (adminTurler.Contains("BAKIMADMIN"))
+                                {
+                                    var toplam = _context.tb_Talep.Count(o => o.Durum == false && o.TalepTurKodu == "BAKIM");
+                                    var bende = _context.tb_Talep.Count(o => o.Durum == false && o.TalepTurKodu == "BAKIM" && o.SorumluSicil == sicil);
+                                    sonuc[projeId] = toplam + "/" + bende;
+                                }
+                                else
+                                {
+                                    var sirketKodu = _context.tb_Personel.AsNoTracking()
+                                        .Where(p => p.SicilNo == sicil)
+                                        .Select(p => p.SirketKodu)
+                                        .FirstOrDefault() ?? "";
+
+                                    var sirketAcik = (from t in _context.tb_Talep
+                                                      join tb in _context.tb_TalepBakim on t.TalepKodu equals tb.TalepKodu
+                                                      where t.Durum == false && t.TalepTurKodu == "BAKIM" && tb.SirketKodu == sirketKodu
+                                                      select t.TalepID).Count();
+                                    var bende = _context.tb_Talep.Count(o => o.Durum == false && o.TalepTurKodu == "BAKIM" && o.SorumluSicil == sicil);
+                                    sonuc[projeId] = sirketAcik + "/" + bende;
+                                }
+                            }
+                            else
+                            {
+                                sonuc[projeId] = _context.tb_TalepAmir
+                                    .Count(o => o.Durum == null && o.AmirSicil == sicil).ToString();
+                            }
+                            break;
+                        }
+
+                        case 23: // Izin Talep Yonetimi
+                        {
+                            var cnt = _context.tb_IzinOnay.Count(o => o.Durum == null && o.BekleyenOnay == sicil);
+                            if (adminTurler.Contains("IZIN") || adminTurler.Contains("IK"))
+                                cnt += _context.tb_IzinOnay.Count(o => o.Durum == null && o.SurecDurum == "IKONAY");
+                            sonuc[projeId] = cnt.ToString();
+                            break;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Rozet hesabi menuyu bloklamamali
+                }
+            }
+
+            // "0" rozetini webportal gostermiyor
+            return sonuc
+                .Where(kv => kv.Value != "" && kv.Value != "0")
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
         }
 
         public object DbDebug()

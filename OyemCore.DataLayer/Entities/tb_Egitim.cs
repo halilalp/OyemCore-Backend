@@ -10,5 +10,8 @@ namespace OyemCore.DataLayer.Entities
         public DateTime? KayitTar { get; set; }
         public int? KategoriID { get; set; }
         public string KayitEposta { get; set; }
+        // DB'de mevcut olmasina ragmen entity'ye eslenmemisti; bu yuzden
+        // egitim aciklamalari hicbir yerde gorunmuyordu.
+        public string Aciklama { get; set; }
     }
 }

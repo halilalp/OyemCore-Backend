@@ -1091,7 +1091,17 @@ namespace OyemCore.BusinessLayer.Services
             var t = _context.tb_Talep.FirstOrDefault(r => r.TalepID == talepID);
             if (t == null) return false;
 
-            if (status == "Kapali")
+            // Istemci "KAPATILDI" gonderiyor. Onceki karsilastirma "Kapali" bekledigi icin
+            // kapatma hic calismiyor, talep sessizce "yeniden acildi" dalina dusuyordu.
+            // Tanimsiz bir deger artik sessizce gecmez, hata firlatir.
+            var durumKodu = (status ?? "").Trim().ToUpperInvariant();
+            bool kapatiliyor = durumKodu == "KAPATILDI" || durumKodu == "KAPALI";
+            bool yenidenAciliyor = durumKodu == "ACIK" || durumKodu == "ACILDI";
+
+            if (!kapatiliyor && !yenidenAciliyor)
+                throw new InvalidOperationException($"Geçersiz talep durumu: {status}");
+
+            if (kapatiliyor)
             {
                 if (string.IsNullOrEmpty(t.SorumluSicil))
                     throw new InvalidOperationException("Sorumlu atanmamış bir talep kapatılamaz.");
@@ -1137,7 +1147,7 @@ namespace OyemCore.BusinessLayer.Services
             _context.SaveChanges();
 
             // Talep sahibine durum bildirimi (işlemi yapan hariç).
-            if (status == "Kapali" && !string.IsNullOrEmpty(t.KayitSicil) && t.KayitSicil != user.SicilNo)
+            if (kapatiliyor && !string.IsNullOrEmpty(t.KayitSicil) && t.KayitSicil != user.SicilNo)
             {
                 var mesaj = t.TalepTurKodu == "BAKIM"
                     ? $"{t.TalepKodu} talebiniz form onayınıza sunuldu."
