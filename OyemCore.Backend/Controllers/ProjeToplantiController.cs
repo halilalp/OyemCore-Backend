@@ -33,6 +33,13 @@ namespace OyemCore.Backend.Controllers
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
+        [HttpGet("ozet")]
+        public IActionResult HomeOzet()
+        {
+            try { return Ok(_service.HomeOzet(GetUserId())); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
         [HttpGet("{id}")]
         public IActionResult GetDetail(int id)
         {

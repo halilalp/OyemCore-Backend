@@ -100,6 +100,35 @@ namespace OyemCore.BusinessLayer.Services
             return list;
         }
 
+        // Anasayfa proje kartı özeti: açık proje + toplam görev + gecikmiş görev.
+        // Yetki filtresi GetList ile aynı. Gecikmiş = tamamlanmamış & termini geçmiş görev.
+        public object HomeOzet(int userId)
+        {
+            var usr = _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == userId);
+            if (usr == null) return new { acikProje = 0, gorev = 0, gecikmis = 0 };
+            string eposta = usr.Eposta ?? "";
+            var adminTurler = (usr.AdminBelgeTur ?? "").Split('*').Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+
+            var q = _context.tb_Toplanti.Where(i =>
+                i.KullaniciEposta == eposta ||
+                (i.ProjeTur != null && i.ProjeTur != "" && adminTurler.Contains(i.ProjeTur)) ||
+                _context.tb_ToplantiKullanici.Any(o => o.ToplantiID == i.ID && o.KullaniciEposta == eposta) ||
+                _context.tb_ToplantiGorev.Any(g => g.ToplantiID == i.ID && g.SorumluEposta == eposta));
+
+            var ids = q.Select(i => i.ID).ToList();
+            int acikProje = q.Count(i => i.Durum != true);
+
+            var gorevler = _context.tb_ToplantiGorev
+                .Where(g => g.ToplantiID != null && ids.Contains(g.ToplantiID.Value) && g.GoruntuDurum == true)
+                .Select(g => new { g.Durum, g.TerminTar })
+                .ToList();
+            int gorev = gorevler.Count;
+            var bugun = DateTime.Today;
+            int gecikmis = gorevler.Count(g => g.Durum != true && g.TerminTar != null && g.TerminTar.Value.Date < bugun);
+
+            return new { acikProje, gorev, gecikmis };
+        }
+
         public object GetDetail(int userId, int toplantiId)
         {
             var usr = _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == userId);

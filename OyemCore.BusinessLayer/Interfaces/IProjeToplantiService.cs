@@ -10,6 +10,9 @@ namespace OyemCore.BusinessLayer.Interfaces
         // proje türü admini. tur: '' | 'P' | 'T'; durum: '' | 'TAMAMLANDI' | 'BEKLEMEDE'.
         IEnumerable<object> GetList(int userId, string konu, string durum, string tur);
 
+        // Anasayfa proje kartı özeti: açık proje + toplam görev + gecikmiş görev.
+        object HomeOzet(int userId);
+
         // Başlık + katılımcılar + görevler + dosyalar.
         object GetDetail(int userId, int toplantiId);
 
