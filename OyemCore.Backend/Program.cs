@@ -51,6 +51,7 @@ builder.Services.AddScoped<ITalepService, TalepService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 builder.Services.AddScoped<IDashboardService, DashboardService>();
 builder.Services.AddScoped<ISatSasService, SatSasService>();
+builder.Services.AddScoped<IProjeToplantiService, ProjeToplantiService>();
 builder.Services.AddScoped<ITakvimService, TakvimService>();
 builder.Services.AddScoped<IHaberService, HaberService>();
 builder.Services.AddScoped<IEgitimService, EgitimService>();
