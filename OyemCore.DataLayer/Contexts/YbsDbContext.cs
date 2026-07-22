@@ -30,6 +30,11 @@ namespace OyemCore.DataLayer.Contexts
         public DbSet<tb_Talep> tb_Talep { get; set; }
         public DbSet<tb_IsEmriTur> tb_IsEmriTur { get; set; }
         public DbSet<tb_TalepIsEmri> tb_TalepIsEmri { get; set; }
+        // Satın Alma (SAT talep / SAS sipariş)
+        public DbSet<tb_SatOnay> tb_SatOnay { get; set; }
+        public DbSet<tb_SatKalem> tb_SatKalem { get; set; }
+        public DbSet<tb_SaSip> tb_SaSip { get; set; }
+        public DbSet<tb_SasKalem> tb_SasKalem { get; set; }
         public DbSet<tb_TalepBakim> tb_TalepBakim { get; set; }
         public DbSet<tb_TalepGelisme> tb_TalepGelisme { get; set; }
         public DbSet<tb_TalepKategori> tb_TalepKategori { get; set; }
