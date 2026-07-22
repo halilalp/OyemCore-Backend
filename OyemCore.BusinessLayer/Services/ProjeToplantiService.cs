@@ -151,6 +151,12 @@ namespace OyemCore.BusinessLayer.Services
                                 kayitTarStr = d.KayitTar != null ? d.KayitTar.Value.ToString("dd.MM.yyyy HH:mm") : ""
                             }).ToList();
 
+            return DetailObject(usr, t, sahip, katilimcilar, gorevler, dosyalar);
+        }
+
+        private object DetailObject(tb_Kullanici usr, tb_Toplanti t, tb_Personel sahip,
+            object katilimcilar, object gorevler, object dosyalar)
+        {
             return new
             {
                 toplanti = new
@@ -175,6 +181,163 @@ namespace OyemCore.BusinessLayer.Services
                 gorevler,
                 dosyalar
             };
+        }
+
+        // dd/MM/yyyy veya dd.MM.yyyy → DateTime (referans ParseDateTimeRobust)
+        private static DateTime? ParseTarih(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return null;
+            var p = s.Replace("/", ".").Split(' ')[0].Split('.');
+            if (p.Length == 3 && int.TryParse(p[0], out int g) && int.TryParse(p[1], out int a) && int.TryParse(p[2], out int y))
+                return new DateTime(y, a, g);
+            return DateTime.TryParse(s, out var d) ? d : (DateTime?)null;
+        }
+
+        private tb_Kullanici GetUser(int userId) =>
+            _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == userId)
+            ?? throw new InvalidOperationException("Kullanıcı bulunamadı.");
+
+        public int Create(int userId, string tur, string projeTur, string konu, string aciklama,
+                          string basTarih, string bitTarih, List<string> katilimciEpostalar)
+        {
+            var usr = GetUser(userId);
+            if (string.IsNullOrWhiteSpace(konu)) throw new InvalidOperationException("Konu boş bırakılamaz.");
+            if (string.IsNullOrWhiteSpace(basTarih)) throw new InvalidOperationException("Başlangıç tarihi boş bırakılamaz.");
+            if (tur == "P" && string.IsNullOrWhiteSpace(bitTarih))
+                throw new InvalidOperationException("Bitiş tarihi boş bırakılamaz.");
+
+            var t = new tb_Toplanti
+            {
+                Tur = tur,
+                ProjeTur = (projeTur == "0" || string.IsNullOrEmpty(projeTur)) ? null : projeTur,
+                Konu = konu,
+                Aciklama = aciklama,
+                Durum = false,
+                KullaniciEposta = usr.Eposta,
+                BasTarih = ParseTarih(basTarih),
+                BitTarih = ParseTarih(bitTarih),
+                KayitTar = DateTime.Now
+            };
+            _context.tb_Toplanti.Add(t);
+            _context.SaveChanges();
+
+            if (katilimciEpostalar != null)
+            {
+                foreach (var e in katilimciEpostalar.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct())
+                {
+                    bool aktif = _context.tb_Personel.Any(p => p.Eposta == e && p.Durum == true);
+                    if (aktif && !_context.tb_ToplantiKullanici.Any(k => k.ToplantiID == t.ID && k.KullaniciEposta == e))
+                        _context.tb_ToplantiKullanici.Add(new tb_ToplantiKullanici { ToplantiID = t.ID, KullaniciEposta = e });
+                }
+                _context.SaveChanges();
+            }
+            return t.ID;
+        }
+
+        public void UpdateDurum(int userId, int toplantiId, bool durum)
+        {
+            var usr = GetUser(userId);
+            var t = _context.tb_Toplanti.FirstOrDefault(o => o.ID == toplantiId)
+                ?? throw new InvalidOperationException("Kayıt bulunamadı.");
+            if (t.KullaniciEposta != usr.Eposta)
+                throw new InvalidOperationException("Durumu sadece kaydı oluşturan personel değiştirebilir.");
+            t.Durum = durum;
+            t.DurumTar = DateTime.Now;
+            _context.SaveChanges();
+        }
+
+        public int AddGorev(int userId, int toplantiId, string aciklama, string sorumluEposta,
+                            string terminTar, string baslamaTar, string trl)
+        {
+            var usr = GetUser(userId);
+            var t = _context.tb_Toplanti.FirstOrDefault(o => o.ID == toplantiId)
+                ?? throw new InvalidOperationException("Kayıt bulunamadı.");
+
+            bool sahip = t.KullaniciEposta == usr.Eposta;
+            bool katilimci = _context.tb_ToplantiKullanici.Any(k => k.ToplantiID == toplantiId && k.KullaniciEposta == usr.Eposta);
+            if (!sahip && !katilimci)
+                throw new InvalidOperationException("Görevi sadece oluşturan personel ya da katılımcılar ekleyebilir.");
+            if (string.IsNullOrWhiteSpace(aciklama)) throw new InvalidOperationException("Görev açıklaması boş olamaz.");
+            if (string.IsNullOrWhiteSpace(sorumluEposta)) throw new InvalidOperationException("Sorumlu seçilmelidir.");
+
+            var basla = ParseTarih(baslamaTar);
+            var termin = ParseTarih(terminTar);
+            if (basla != null && t.BasTarih != null && basla < t.BasTarih)
+                throw new InvalidOperationException($"Görev başlangıcı proje başlangıcından ({t.BasTarih.Value:dd.MM.yyyy}) önce olamaz.");
+            if (termin != null && t.BitTarih != null && termin > t.BitTarih)
+                throw new InvalidOperationException($"Görev bitişi proje bitişinden ({t.BitTarih.Value:dd.MM.yyyy}) sonra olamaz.");
+
+            int sonNo = _context.tb_ToplantiGorev.Where(g => g.ToplantiID == toplantiId).Select(g => g.GorevNo ?? 0).DefaultIfEmpty(0).Max();
+            var tg = new tb_ToplantiGorev
+            {
+                ToplantiID = toplantiId,
+                GorevNo = sonNo + 1,
+                Aciklama = aciklama,
+                SorumluEposta = sorumluEposta,
+                KayitEposta = usr.Eposta,
+                KayitTar = DateTime.Now,
+                TerminTar = termin,
+                BaslamaTarihi = basla,
+                Durum = false,
+                GoruntuDurum = true,
+                RevizyonAdet = 0,
+                TrlSeviyeKodu = string.IsNullOrEmpty(trl) ? null : trl
+            };
+            _context.tb_ToplantiGorev.Add(tg);
+            _context.SaveChanges();
+            return tg.ID;
+        }
+
+        public void CompleteGorev(int userId, int gorevId)
+        {
+            var usr = GetUser(userId);
+            var g = _context.tb_ToplantiGorev.FirstOrDefault(o => o.ID == gorevId)
+                ?? throw new InvalidOperationException("Görev bulunamadı.");
+            var t = _context.tb_Toplanti.FirstOrDefault(o => o.ID == g.ToplantiID);
+            if (t != null && t.KullaniciEposta != usr.Eposta && g.KayitEposta != usr.Eposta)
+                throw new InvalidOperationException("Görev durumunu sadece kaydı oluşturan personel değiştirebilir.");
+            g.Durum = true;
+            g.OnayTar = DateTime.Now;
+            _context.SaveChanges();
+        }
+
+        public void DeleteGorev(int userId, int gorevId)
+        {
+            var usr = GetUser(userId);
+            var g = _context.tb_ToplantiGorev.FirstOrDefault(o => o.ID == gorevId)
+                ?? throw new InvalidOperationException("Görev bulunamadı.");
+            var t = _context.tb_Toplanti.FirstOrDefault(o => o.ID == g.ToplantiID);
+            if (t != null && t.KullaniciEposta != usr.Eposta && g.KayitEposta != usr.Eposta)
+                throw new InvalidOperationException("Görevi sadece oluşturan personel silebilir.");
+            _context.tb_ToplantiGorev.Remove(g);
+            _context.SaveChanges();
+        }
+
+        public void AddKatilimci(int userId, int toplantiId, string eposta)
+        {
+            var usr = GetUser(userId);
+            var t = _context.tb_Toplanti.FirstOrDefault(o => o.ID == toplantiId)
+                ?? throw new InvalidOperationException("Kayıt bulunamadı.");
+            if (t.KullaniciEposta != usr.Eposta)
+                throw new InvalidOperationException("Katılımcıyı sadece kaydı oluşturan personel ekleyebilir.");
+            if (!_context.tb_Personel.Any(p => p.Eposta == eposta && p.Durum == true))
+                throw new InvalidOperationException("Aktif personel bulunamadı.");
+            if (_context.tb_ToplantiKullanici.Any(k => k.ToplantiID == toplantiId && k.KullaniciEposta == eposta))
+                throw new InvalidOperationException("Bu katılımcı zaten ekli.");
+            _context.tb_ToplantiKullanici.Add(new tb_ToplantiKullanici { ToplantiID = toplantiId, KullaniciEposta = eposta });
+            _context.SaveChanges();
+        }
+
+        public void RemoveKatilimci(int userId, int katilimciId)
+        {
+            var usr = GetUser(userId);
+            var k = _context.tb_ToplantiKullanici.FirstOrDefault(o => o.ID == katilimciId)
+                ?? throw new InvalidOperationException("Katılımcı bulunamadı.");
+            var t = _context.tb_Toplanti.FirstOrDefault(o => o.ID == k.ToplantiID);
+            if (t != null && t.KullaniciEposta != usr.Eposta)
+                throw new InvalidOperationException("Katılımcıyı sadece kaydı oluşturan personel çıkarabilir.");
+            _context.tb_ToplantiKullanici.Remove(k);
+            _context.SaveChanges();
         }
     }
 }
