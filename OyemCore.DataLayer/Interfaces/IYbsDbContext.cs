@@ -30,6 +30,11 @@ namespace OyemCore.DataLayer.Interfaces
         DbSet<tb_SatKalem> tb_SatKalem { get; set; }
         DbSet<tb_SaSip> tb_SaSip { get; set; }
         DbSet<tb_SasKalem> tb_SasKalem { get; set; }
+        DbSet<tb_Toplanti> tb_Toplanti { get; set; }
+        DbSet<tb_ToplantiGorev> tb_ToplantiGorev { get; set; }
+        DbSet<tb_ToplantiKullanici> tb_ToplantiKullanici { get; set; }
+        DbSet<tb_ToplantiDosya> tb_ToplantiDosya { get; set; }
+        DbSet<tb_RecProjeTur> tb_RecProjeTur { get; set; }
         DbSet<tb_IsEmriTur> tb_IsEmriTur { get; set; }
         DbSet<tb_TalepBakim> tb_TalepBakim { get; set; }
         DbSet<tb_TalepGelisme> tb_TalepGelisme { get; set; }

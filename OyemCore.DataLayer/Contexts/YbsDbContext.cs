@@ -35,6 +35,12 @@ namespace OyemCore.DataLayer.Contexts
         public DbSet<tb_SatKalem> tb_SatKalem { get; set; }
         public DbSet<tb_SaSip> tb_SaSip { get; set; }
         public DbSet<tb_SasKalem> tb_SasKalem { get; set; }
+        // Proje / Toplantı yönetimi
+        public DbSet<tb_Toplanti> tb_Toplanti { get; set; }
+        public DbSet<tb_ToplantiGorev> tb_ToplantiGorev { get; set; }
+        public DbSet<tb_ToplantiKullanici> tb_ToplantiKullanici { get; set; }
+        public DbSet<tb_ToplantiDosya> tb_ToplantiDosya { get; set; }
+        public DbSet<tb_RecProjeTur> tb_RecProjeTur { get; set; }
         public DbSet<tb_TalepBakim> tb_TalepBakim { get; set; }
         public DbSet<tb_TalepGelisme> tb_TalepGelisme { get; set; }
         public DbSet<tb_TalepKategori> tb_TalepKategori { get; set; }
