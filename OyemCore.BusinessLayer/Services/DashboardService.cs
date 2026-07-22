@@ -403,5 +403,69 @@ namespace OyemCore.BusinessLayer.Services
                         .Replace("/C", "")
                         .Replace("/D", "");
         }
+
+        // Zil bildirimleri — referans pr_GetUserActionList / ServiceModul.GetBildirimler.
+        // Kullanıcının aksiyon bekleyen işleri. TOPLANTI kaynağı [ToplantiDB] cross-database
+        // olduğu ve bu bağlantının erişimi olmadığı için hariç; diğer 3 kaynak birebir.
+        public object GetUserActions(int userId)
+        {
+            var usr = _context.tb_Kullanici.AsNoTracking().FirstOrDefault(u => u.KullaniciID == userId);
+            if (usr == null || string.IsNullOrEmpty(usr.SicilNo))
+                return new { totalCount = 0, details = new List<object>() };
+
+            string sicil = usr.SicilNo;
+
+            // 1) Amir onayı bekleyen talepler
+            var amirOnay = (from ta in _context.tb_TalepAmir
+                            join t in _context.tb_Talep on ta.TalepKodu equals t.TalepKodu
+                            where ta.AmirSicil == sicil && ta.Durum == null
+                            select new
+                            {
+                                kod = t.TalepKodu,
+                                modul = t.TalepTurKodu ?? "",
+                                category = "Onay Bekliyor",
+                                description = "Talep amir onayı bekliyor",
+                                tarih = t.KayitTar
+                            }).ToList();
+
+            // 2) Soruya cevap bekleyen talepler
+            var cevap = (from sc in _context.tb_TalepSoruCevap
+                         join t in _context.tb_Talep on sc.TalepKodu equals t.TalepKodu
+                         where sc.Sicil == sicil && sc.CevapTalepGelismeID == null
+                         select new
+                         {
+                             kod = t.TalepKodu,
+                             modul = t.TalepTurKodu ?? "",
+                             category = "Cevap Bekliyor",
+                             description = "Talep için soruya cevap bekleniyor",
+                             tarih = t.KayitTar
+                         }).ToList();
+
+            // 3) Onay bekleyen belgeler (izin vb.)
+            var belgeOnay = (from bo in _context.tb_BelgeOnay
+                             where bo.OnaySicil == sicil && bo.Durum == null
+                             select new
+                             {
+                                 kod = bo.BelgeNo,
+                                 modul = "IZIN",
+                                 category = "İzin/Belge Onayı",
+                                 description = "Onay bekleyen belge mevcut",
+                                 tarih = (DateTime?)null
+                             }).ToList();
+
+            var hepsi = amirOnay.Concat(cevap).Concat(belgeOnay)
+                .OrderByDescending(x => x.tarih ?? DateTime.MinValue)
+                .Select(x => new
+                {
+                    kod = x.kod,
+                    modul = x.modul,
+                    category = x.category,
+                    description = x.description,
+                    date = x.tarih != null ? x.tarih.Value.ToString("dd.MM.yyyy") : ""
+                })
+                .ToList<object>();
+
+            return new { totalCount = hepsi.Count, details = hepsi };
+        }
     }
 }

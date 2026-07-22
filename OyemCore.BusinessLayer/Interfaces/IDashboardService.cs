@@ -13,6 +13,9 @@ namespace OyemCore.BusinessLayer.Interfaces
         IEnumerable<object> GetNews();
         object GetNewsDetail(int id);
         IEnumerable<object> GetMenu(int userId);
+        // Zil bildirimleri: kullanıcının aksiyon bekleyen işleri (referans
+        // pr_GetUserActionList / ServiceModul.GetBildirimler).
+        object GetUserActions(int userId);
         object DbDebug();
     }
 }

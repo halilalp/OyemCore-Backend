@@ -188,6 +188,21 @@ namespace OyemCore.Backend.Controllers
             }
         }
 
+        // Zil bildirimleri: kullanıcının aksiyon bekleyen işleri.
+        [HttpGet("user-actions")]
+        public IActionResult GetUserActions()
+        {
+            try
+            {
+                int userId = GetCurrentUserId();
+                return Ok(_dashboardService.GetUserActions(userId));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Bildirimler alınırken hata oluştu: {ex.Message}" });
+            }
+        }
+
         /// <summary>
         /// Veritabani baglantisini test etmek ve hata ayiklama bilgilerini almak amaciyla kullanilir.
         /// </summary>
