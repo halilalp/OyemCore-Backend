@@ -167,7 +167,8 @@ namespace OyemCore.BusinessLayer.Services
             if (string.IsNullOrWhiteSpace(malzemeKodu)) throw new InvalidOperationException("Malzeme seçilmelidir.");
             if (miktar <= 0) throw new InvalidOperationException("Miktar sıfırdan büyük olmalıdır.");
 
-            int sonKalemNo = _context.tb_SatKalem.Where(k => k.BelgeNo == belgeNo).Select(k => k.KalemNo ?? 0).DefaultIfEmpty(0).Max();
+            // EF Core DefaultIfEmpty().Max()'ı SQL'e çeviremiyor; nullable Max + ?? 0 çevrilir.
+            int sonKalemNo = _context.tb_SatKalem.Where(k => k.BelgeNo == belgeNo).Max(k => (int?)k.KalemNo) ?? 0;
 
             var kalem = new tb_SatKalem
             {

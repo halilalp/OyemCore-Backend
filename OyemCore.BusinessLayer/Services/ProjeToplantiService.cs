@@ -267,7 +267,8 @@ namespace OyemCore.BusinessLayer.Services
             if (termin != null && t.BitTarih != null && termin > t.BitTarih)
                 throw new InvalidOperationException($"Görev bitişi proje bitişinden ({t.BitTarih.Value:dd.MM.yyyy}) sonra olamaz.");
 
-            int sonNo = _context.tb_ToplantiGorev.Where(g => g.ToplantiID == toplantiId).Select(g => g.GorevNo ?? 0).DefaultIfEmpty(0).Max();
+            // EF Core DefaultIfEmpty().Max()'ı SQL'e çeviremiyor; nullable Max + ?? 0 çevrilir.
+            int sonNo = _context.tb_ToplantiGorev.Where(g => g.ToplantiID == toplantiId).Max(g => (int?)g.GorevNo) ?? 0;
             var tg = new tb_ToplantiGorev
             {
                 ToplantiID = toplantiId,
