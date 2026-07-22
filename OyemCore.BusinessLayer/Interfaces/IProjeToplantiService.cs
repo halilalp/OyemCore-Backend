@@ -32,5 +32,12 @@ namespace OyemCore.BusinessLayer.Interfaces
         // Katılımcı ekle/çıkar (yalnız oluşturan).
         void AddKatilimci(int userId, int toplantiId, string eposta);
         void RemoveKatilimci(int userId, int katilimciId);
+
+        // Katılımcı seçimi için aktif personel listesi (eposta/ad/sicil).
+        IEnumerable<object> GetAktifPersoneller(string arama);
+
+        // Dosya ekle (metadata; dosya önce upload edilir, dosyaUrl kaydedilir) / sil.
+        void AddDosya(int userId, int toplantiId, string baslik, string dosyaUrl);
+        void DeleteDosya(int userId, int dosyaId);
     }
 }

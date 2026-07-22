@@ -340,5 +340,47 @@ namespace OyemCore.BusinessLayer.Services
             _context.tb_ToplantiKullanici.Remove(k);
             _context.SaveChanges();
         }
+
+        public IEnumerable<object> GetAktifPersoneller(string arama)
+        {
+            var q = _context.tb_Personel.Where(p => p.Durum == true && p.Eposta != null && p.Eposta != "");
+            if (!string.IsNullOrWhiteSpace(arama))
+            {
+                var a = arama.Trim();
+                q = q.Where(p => p.AdSoyad.Contains(a) || p.Eposta.Contains(a) || p.SicilNo.Contains(a));
+            }
+            return q.OrderBy(p => p.AdSoyad).Take(300)
+                .Select(p => new { eposta = p.Eposta, ad = p.AdSoyad, sicilNo = p.SicilNo })
+                .ToList();
+        }
+
+        public void AddDosya(int userId, int toplantiId, string baslik, string dosyaUrl)
+        {
+            var usr = GetUser(userId);
+            var t = _context.tb_Toplanti.FirstOrDefault(o => o.ID == toplantiId)
+                ?? throw new InvalidOperationException("Kayıt bulunamadı.");
+            if (string.IsNullOrWhiteSpace(dosyaUrl)) throw new InvalidOperationException("Dosya seçilmedi.");
+            _context.tb_ToplantiDosya.Add(new tb_ToplantiDosya
+            {
+                ToplantiID = toplantiId,
+                DosyaBaslik = string.IsNullOrWhiteSpace(baslik) ? "Dosya" : baslik,
+                DosyaUrl = dosyaUrl,
+                KayitEposta = usr.Eposta,
+                KayitTar = DateTime.Now
+            });
+            _context.SaveChanges();
+        }
+
+        public void DeleteDosya(int userId, int dosyaId)
+        {
+            var usr = GetUser(userId);
+            var d = _context.tb_ToplantiDosya.FirstOrDefault(o => o.ID == dosyaId)
+                ?? throw new InvalidOperationException("Dosya bulunamadı.");
+            var t = _context.tb_Toplanti.FirstOrDefault(o => o.ID == d.ToplantiID);
+            if (t != null && t.KullaniciEposta != usr.Eposta && d.KayitEposta != usr.Eposta)
+                throw new InvalidOperationException("Dosyayı sadece ekleyen veya kaydı oluşturan silebilir.");
+            _context.tb_ToplantiDosya.Remove(d);
+            _context.SaveChanges();
+        }
     }
 }

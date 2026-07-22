@@ -103,6 +103,27 @@ namespace OyemCore.Backend.Controllers
             try { _service.RemoveKatilimci(GetUserId(), katilimciId); return Ok(new { success = true }); }
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
+
+        [HttpGet("personeller")]
+        public IActionResult GetAktifPersoneller([FromQuery] string arama)
+        {
+            try { return Ok(_service.GetAktifPersoneller(arama)); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpPost("{id}/dosya")]
+        public IActionResult AddDosya(int id, [FromBody] DosyaRequest req)
+        {
+            try { _service.AddDosya(GetUserId(), id, req.Baslik, req.DosyaUrl); return Ok(new { success = true }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpDelete("dosya/{dosyaId}")]
+        public IActionResult DeleteDosya(int dosyaId)
+        {
+            try { _service.DeleteDosya(GetUserId(), dosyaId); return Ok(new { success = true }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
     }
 
     public class ProjeCreateRequest
@@ -118,6 +139,7 @@ namespace OyemCore.Backend.Controllers
 
     public class DurumRequest { public bool Durum { get; set; } }
     public class KatilimciRequest { public string Eposta { get; set; } }
+    public class DosyaRequest { public string Baslik { get; set; } public string DosyaUrl { get; set; } }
     public class GorevRequest
     {
         public string Aciklama { get; set; }
