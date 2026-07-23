@@ -610,19 +610,23 @@ namespace OyemCore.Backend.Controllers
                 }
 
                 var exists = _context.tb_SayimAygit.Any(s => s.AygitID == asset.AygitID);
-                if (!exists)
+                if (exists)
                 {
-                    var sayim = new tb_SayimAygit
-                    {
-                        AygitID = asset.AygitID,
-                        SicilNo = currentUser.SicilNo,
-                        IslemTar = DateTime.Now
-                    };
-                    _context.tb_SayimAygit.Add(sayim);
-                    _context.SaveChanges();
+                    // Aynı demirbaş 2. kez okutuldu — frontend "listeden çıkarılsın mı?"
+                    // diye sorar; evet ise removeSayim çağrılır.
+                    return Ok(new { success = true, alreadyExists = true, aygitID = asset.AygitID, tanim = asset.Tanim, message = "Bu demirbaş sayım listesinde zaten var." });
                 }
 
-                return Ok(new { success = true, message = "Demirbas sayima eklendi.", aygitID = asset.AygitID });
+                var sayim = new tb_SayimAygit
+                {
+                    AygitID = asset.AygitID,
+                    SicilNo = currentUser.SicilNo,
+                    IslemTar = DateTime.Now
+                };
+                _context.tb_SayimAygit.Add(sayim);
+                _context.SaveChanges();
+
+                return Ok(new { success = true, alreadyExists = false, message = "Demirbas sayima eklendi.", aygitID = asset.AygitID });
             }
             catch (Exception ex)
             {
