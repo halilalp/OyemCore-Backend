@@ -378,6 +378,9 @@ namespace OyemCore.BusinessLayer.Services
             {
                 var kontrol = new tb_BakimPerKontrol
                 {
+                    // KontrolKodu NOT NULL: ilk insert'te boş string, ID sonrası
+                    // KON-YYYYAA-ID yazılır (BakimPlan ile aynı; null → "entity changes").
+                    KontrolKodu = "",
                     BolumKodu = bolumKodu,
                     KontrolTuru = kontrolTuru,
                     HedefBaslangic = dtBas,
