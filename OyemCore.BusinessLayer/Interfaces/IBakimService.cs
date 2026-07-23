@@ -21,6 +21,11 @@ namespace OyemCore.BusinessLayer.Interfaces
         IEnumerable<PeriyodikSarfiyatDto> GetPeriyodikSarfiyats(string kontrolKodu);
         bool SavePeriyodikSarfiyat(string kontrolKodu, string malzemeKodu, decimal miktar, string makineKodu, string sicil);
         bool DeletePeriyodikSarfiyat(int id);
+        // Bakım planı sarfiyatı + hata bağlı makineler
+        IEnumerable<BakimSarfiyatDto> GetBakimSarfiyats(string planKodu);
+        bool SaveBakimSarfiyat(string planKodu, string malzemeKodu, decimal miktar, string makineKodu, string sicil);
+        bool DeleteBakimSarfiyat(int id);
+        IEnumerable<MakineDto> GetHatMakines(string hatKodu);
         IEnumerable<BakimPlanDetayDto> GetPeriyodikGelismeler(string kontrolKodu);
         bool SavePeriyodikGelisme(string kontrolKodu, string aciklama, string dosyaUrl, string sicil);
         bool DeletePeriyodikGelisme(int id);

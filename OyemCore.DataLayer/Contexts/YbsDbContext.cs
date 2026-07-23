@@ -60,6 +60,7 @@ namespace OyemCore.DataLayer.Contexts
         public DbSet<tb_BakimPerKontrol> tb_BakimPerKontrol { get; set; }
         public DbSet<tb_BakimPerKontrolDetay> tb_BakimPerKontrolDetay { get; set; }
         public DbSet<tb_BakimPerKontrolSarfiyat> tb_BakimPerKontrolSarfiyat { get; set; }
+        public DbSet<tb_BakimSarfiyat> tb_BakimSarfiyat { get; set; }
         public DbSet<tb_BakimPlan> tb_BakimPlan { get; set; }
         public DbSet<tb_BakimPlanDetay> tb_BakimPlanDetay { get; set; }
         public DbSet<tb_KullaniciYetki> tb_KullaniciYetki { get; set; }
@@ -124,6 +125,7 @@ namespace OyemCore.DataLayer.Contexts
             modelBuilder.Entity<tb_BakimPerKontrol>().ToTable("tb_BakimPerKontrol").HasKey(e => e.ID);
             modelBuilder.Entity<tb_BakimPerKontrolDetay>().ToTable("tb_BakimPerKontrolDetay").HasKey(e => e.ID);
             modelBuilder.Entity<tb_BakimPerKontrolSarfiyat>().ToTable("tb_BakimPerKontrolSarfiyat").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_BakimSarfiyat>().ToTable("tb_BakimSarfiyat").HasKey(e => e.ID);
             modelBuilder.Entity<tb_BakimPlan>().ToTable("tb_BakimPlan").HasKey(e => e.ID);
             modelBuilder.Entity<tb_BakimPlanDetay>().ToTable("tb_BakimPlanDetay").HasKey(e => e.ID);
             modelBuilder.Entity<tb_KullaniciYetki>().ToTable("tb_KullaniciYetki").HasKey(e => e.KullaniciYetkiID);

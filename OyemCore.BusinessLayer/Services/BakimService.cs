@@ -532,6 +532,77 @@ namespace OyemCore.BusinessLayer.Services
             return false;
         }
 
+        // ── Bakım Planı sarfiyatı (referans: WebServiceBakimPlani.BakimSarfiyat*) ──
+        public IEnumerable<BakimSarfiyatDto> GetBakimSarfiyats(string planKodu)
+        {
+            var query = from s in _context.tb_BakimSarfiyat
+                        join st in _context.tb_Malzeme on s.MalzemeKodu equals st.MalzemeKodu into sts
+                        from st in sts.DefaultIfEmpty()
+                        join m in _context.tb_Makine on s.MakineKodu equals m.MakineKodu into ms
+                        from m in ms.DefaultIfEmpty()
+                        where s.PlanKodu == planKodu
+                        orderby s.KayitTar descending
+                        select new BakimSarfiyatDto
+                        {
+                            ID = s.ID,
+                            PlanKodu = s.PlanKodu,
+                            MalzemeKodu = s.MalzemeKodu,
+                            MalzemeAdi = st != null ? st.MalzemeAdi : "",
+                            Birim = st != null ? st.BirimKodu : "",
+                            Miktar = s.Miktar,
+                            MakineKodu = s.MakineKodu,
+                            MakineAdi = m != null ? m.MakineAdi : "",
+                            KayitSicil = s.KayitSicil,
+                            KayitTar = s.KayitTar
+                        };
+
+            return query.ToList();
+        }
+
+        public bool SaveBakimSarfiyat(string planKodu, string malzemeKodu, decimal miktar, string makineKodu, string sicil)
+        {
+            var sarfiyat = new tb_BakimSarfiyat
+            {
+                PlanKodu = planKodu,
+                MalzemeKodu = malzemeKodu,
+                Miktar = miktar,
+                MakineKodu = string.IsNullOrEmpty(makineKodu) ? null : makineKodu,
+                KayitSicil = sicil,
+                KayitTar = DateTime.Now
+            };
+
+            _context.tb_BakimSarfiyat.Add(sarfiyat);
+            return _context.SaveChanges() > 0;
+        }
+
+        public bool DeleteBakimSarfiyat(int id)
+        {
+            var sarf = _context.tb_BakimSarfiyat.FirstOrDefault(s => s.ID == id);
+            if (sarf != null)
+            {
+                _context.tb_BakimSarfiyat.Remove(sarf);
+                return _context.SaveChanges() > 0;
+            }
+            return false;
+        }
+
+        // Bir hatta bağlı makineler (referans: HatMakineListesiGetir). Bakım planı
+        // sarfiyatında makine seçimi için — plan hatına bağlı makineler listelenir.
+        public IEnumerable<MakineDto> GetHatMakines(string hatKodu)
+        {
+            if (string.IsNullOrEmpty(hatKodu)) return new List<MakineDto>();
+            return _context.tb_Makine
+                .Where(m => m.HatKodu == hatKodu && m.Durum == true)
+                .OrderBy(m => m.MakineAdi)
+                .Select(m => new MakineDto
+                {
+                    MakineKodu = m.MakineKodu,
+                    MakineAdi = m.MakineAdi,
+                    BolumKodu = m.BolumKodu
+                })
+                .ToList();
+        }
+
         public IEnumerable<BakimPlanDetayDto> GetPeriyodikGelismeler(string kontrolKodu)
         {
             var query = from d in _context.tb_BakimPerKontrolDetay

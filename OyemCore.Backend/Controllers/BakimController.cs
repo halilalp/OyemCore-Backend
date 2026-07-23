@@ -383,6 +383,40 @@ namespace OyemCore.Backend.Controllers
             }
         }
 
+        // ── Bakım Planı sarfiyatı + hata bağlı makineler ──
+        [HttpGet("plan/{code}/sarfiyat")]
+        public ActionResult<IEnumerable<BakimSarfiyatDto>> GetBakimSarfiyats(string code)
+        {
+            try { return Ok(_bakimService.GetBakimSarfiyats(code)); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpPost("plan/{code}/sarfiyat")]
+        public IActionResult SaveBakimSarfiyat(string code, [FromBody] SaveSarfiyatRequest request)
+        {
+            try
+            {
+                var sicil = GetCurrentSicilNo();
+                bool success = _bakimService.SaveBakimSarfiyat(code, request.MalzemeKodu, request.Miktar, request.MakineKodu, sicil);
+                return Ok(new { success });
+            }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpDelete("plan/sarfiyat/{id}")]
+        public IActionResult DeleteBakimSarfiyat(int id)
+        {
+            try { return Ok(new { success = _bakimService.DeleteBakimSarfiyat(id) }); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpGet("hat/{hatKodu}/makines")]
+        public ActionResult<IEnumerable<MakineDto>> GetHatMakines(string hatKodu)
+        {
+            try { return Ok(_bakimService.GetHatMakines(hatKodu)); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
         /// <summary>
         /// Periyodik kontrole ait eklenen gelismeleri/notlari getirir.
         /// </summary>

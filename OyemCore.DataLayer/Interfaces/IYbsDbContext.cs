@@ -55,6 +55,7 @@ namespace OyemCore.DataLayer.Interfaces
         DbSet<tb_BakimPerKontrol> tb_BakimPerKontrol { get; set; }
         DbSet<tb_BakimPerKontrolDetay> tb_BakimPerKontrolDetay { get; set; }
         DbSet<tb_BakimPerKontrolSarfiyat> tb_BakimPerKontrolSarfiyat { get; set; }
+        DbSet<tb_BakimSarfiyat> tb_BakimSarfiyat { get; set; }
         DbSet<tb_BakimPlan> tb_BakimPlan { get; set; }
         DbSet<tb_BakimPlanDetay> tb_BakimPlanDetay { get; set; }
         DbSet<tb_KullaniciYetki> tb_KullaniciYetki { get; set; }
