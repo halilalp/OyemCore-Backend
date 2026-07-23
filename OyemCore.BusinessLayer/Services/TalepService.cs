@@ -306,6 +306,22 @@ namespace OyemCore.BusinessLayer.Services
                                   i.Durum
                               }).ToList();
 
+            // Talep kapandıysa detaylı süre kırılımı (brüt süre, kesintiler, net MTTR).
+            object sureDetay = null;
+            if (item.t.Durum == true && item.t.KapanmaTar != null && item.t.KayitTar != null)
+            {
+                var kr = HesaplaSureKirilim(item.t.TalepKodu, item.t.KayitTar.Value, item.t.KapanmaTar.Value);
+                sureDetay = new
+                {
+                    ToplamSure = (int)kr.toplam,          // brüt mesai süresi (DK)
+                    OnaySure = (int)kr.onay,              // onay bekleme (DK)
+                    SoruCevapSure = (int)kr.soru,         // soru-cevap bekleme (DK)
+                    IsEmriSure = (int)kr.isEmri,          // iş emri bekleme (DK)
+                    NetKesinti = (int)kr.netKesinti,      // çakışmalar birleştirilmiş net kesinti (DK)
+                    NetMttr = kr.netMttr                  // net işlem süresi = ToplamSure - NetKesinti (DK)
+                };
+            }
+
             return new
             {
                 Talep = new
@@ -356,7 +372,8 @@ namespace OyemCore.BusinessLayer.Services
                 // undefined kalıyor, onay/ret ve Bakım kontrol-formu butonları hiç
                 // görünmüyordu (IT/ERP onaylayan + Bakım talep sahibi).
                 OnayBilgisi = activeOnay,
-                SoruList = soruList
+                SoruList = soruList,
+                SureDetay = sureDetay
             };
         }
 
@@ -967,6 +984,211 @@ namespace OyemCore.BusinessLayer.Services
             return toplamDakika;
         }
 
+        // ── MTTR / Süre düşümü hesaplama (referans: WebServiceBakim.TalepSureHesaplaInternal) ──
+        private class Interval { public DateTime Start; public DateTime End; }
+
+        // Çakışan aralıkları mutlak zamana göre birleştirir (referans: ClsBelgeIslemleri.BirlesmisSureHesapla)
+        private List<Interval> BirlesmisSureHesapla(List<Interval> intervals)
+        {
+            if (intervals == null || intervals.Count == 0) return new List<Interval>();
+            var sorted = intervals.Where(i => i.Start < i.End).OrderBy(i => i.Start).ToList();
+            if (sorted.Count == 0) return new List<Interval>();
+
+            var merged = new List<Interval>();
+            var current = new Interval { Start = sorted[0].Start, End = sorted[0].End };
+            for (int i = 1; i < sorted.Count; i++)
+            {
+                if (sorted[i].Start <= current.End)
+                {
+                    if (sorted[i].End > current.End) current.End = sorted[i].End;
+                }
+                else
+                {
+                    merged.Add(current);
+                    current = new Interval { Start = sorted[i].Start, End = sorted[i].End };
+                }
+            }
+            merged.Add(current);
+            return merged;
+        }
+
+        // Bir talebin süre kırılımını hesaplar: brüt çalışma süresi, onay/soru-cevap/iş emri
+        // kesintileri (bilgi amaçlı ham toplamlar), birleştirilmiş net kesinti ve net MTTR.
+        // Kapanmış talepler için kullanılır; hem TalepSureHesapla hem detay ekranı bunu çağırır.
+        private (double toplam, double onay, double soru, double isEmri, double netKesinti, int netMttr)
+            HesaplaSureKirilim(string talepKodu, DateTime kayitTar, DateTime kapanmaTar)
+        {
+            var onaylar = _context.tb_TalepAmir
+                .Where(o => o.TalepKodu == talepKodu && o.Durum == true && o.IslemTar != null && o.KayitTar != null)
+                .ToList();
+            var sorular = _context.tb_TalepSoruCevap
+                .Where(o => o.TalepKodu == talepKodu && o.Sure != null && o.SoruTalepGelismeID != null && o.CevapTalepGelismeID != null)
+                .ToList();
+            var gelismeler = _context.tb_TalepGelisme
+                .Where(o => o.TalepKodu == talepKodu)
+                .ToList()
+                .GroupBy(g => g.TalepGelismeID)
+                .ToDictionary(k => k.Key, v => v.First());
+            var isEmirleri = _context.tb_TalepIsEmri
+                .Where(o => o.TalepKodu == talepKodu && o.KapanmaTar != null && o.KayitTar != null)
+                .ToList();
+
+            var raw = new List<Interval>();
+            double onaySure = 0, soruSure = 0, isEmriSure = 0;
+
+            foreach (var o in onaylar)
+            {
+                raw.Add(new Interval { Start = o.KayitTar.Value, End = o.IslemTar.Value });
+                onaySure += SureHesaplaBakim(o.KayitTar.Value, o.IslemTar.Value);
+            }
+            foreach (var s in sorular)
+            {
+                if (gelismeler.TryGetValue(s.SoruTalepGelismeID.Value, out var gs) && gs.KayitTar != null &&
+                    gelismeler.TryGetValue(s.CevapTalepGelismeID.Value, out var gc) && gc.KayitTar != null)
+                {
+                    raw.Add(new Interval { Start = gs.KayitTar.Value, End = gc.KayitTar.Value });
+                    soruSure += SureHesaplaBakim(gs.KayitTar.Value, gc.KayitTar.Value);
+                }
+            }
+            foreach (var i in isEmirleri)
+            {
+                raw.Add(new Interval { Start = i.KayitTar.Value, End = i.KapanmaTar.Value });
+                isEmriSure += SureHesaplaBakim(i.KayitTar.Value, i.KapanmaTar.Value);
+            }
+
+            var merged = BirlesmisSureHesapla(raw);
+            double netKesinti = 0;
+            foreach (var m in merged) netKesinti += SureHesaplaBakim(m.Start, m.End);
+
+            double toplam = SureHesaplaBakim(kayitTar, kapanmaTar);
+            int netMttr = (int)(toplam - netKesinti);
+            if (netMttr < 0) netMttr = 0;
+
+            return (toplam, onaySure, soruSure, isEmriSure, netKesinti, netMttr);
+        }
+
+        // Talep kapatıldığında net süreleri (kesintiler düşülmüş) hesaplar; hem tb_Talep
+        // (MttrTamamSure/IslemSure/DurusSure) hem tb_TalepSureHesap (audit log) tablolarına yazar.
+        // referans: WebServiceBakim.TalepSureHesaplaInternal
+        private void TalepSureHesapla(string talepKodu)
+        {
+            var t = _context.tb_Talep.SingleOrDefault(o => o.TalepKodu == talepKodu);
+            if (t == null || t.Durum != true || t.KapanmaTar == null || t.KayitTar == null) return;
+
+            // 1. Bu talebe ait eski süre-hesap loglarını temizle
+            var eskiLoglar = _context.tb_TalepSureHesap.Where(o => o.TalepKodu == talepKodu);
+            _context.tb_TalepSureHesap.RemoveRange(eskiLoglar);
+            _context.SaveChanges();
+
+            // 2. Gerekli verileri çek (onay + soru-cevap + iş emri)
+            var onaylar = _context.tb_TalepAmir
+                .Where(o => o.TalepKodu == talepKodu && o.Durum == true && o.IslemTar != null && o.KayitTar != null)
+                .ToList();
+            var sorular = _context.tb_TalepSoruCevap
+                .Where(o => o.TalepKodu == talepKodu && o.Sure != null && o.SoruTalepGelismeID != null && o.CevapTalepGelismeID != null)
+                .ToList();
+            var gelismeler = _context.tb_TalepGelisme
+                .Where(o => o.TalepKodu == talepKodu).ToList()
+                .GroupBy(g => g.TalepGelismeID).ToDictionary(k => k.Key, v => v.First());
+            var isEmirleri = _context.tb_TalepIsEmri
+                .Where(o => o.TalepKodu == talepKodu && o.KapanmaTar != null && o.KayitTar != null)
+                .ToList();
+
+            // 3. Düşülecek ham aralıkları topla
+            var raw = new List<Interval>();
+            foreach (var o in onaylar)
+                raw.Add(new Interval { Start = o.KayitTar.Value, End = o.IslemTar.Value });
+            foreach (var s in sorular)
+                if (gelismeler.TryGetValue(s.SoruTalepGelismeID.Value, out var gs) && gs.KayitTar != null &&
+                    gelismeler.TryGetValue(s.CevapTalepGelismeID.Value, out var gc) && gc.KayitTar != null)
+                    raw.Add(new Interval { Start = gs.KayitTar.Value, End = gc.KayitTar.Value });
+            foreach (var i in isEmirleri)
+                raw.Add(new Interval { Start = i.KayitTar.Value, End = i.KapanmaTar.Value });
+
+            // 4. Çakışanları birleştir; her grup için özet (SONUC) + ham detay satırlarını yaz
+            var merged = BirlesmisSureHesapla(raw);
+            double totalDeductible = 0;
+            int grupID = 1;
+
+            foreach (var m in merged)
+            {
+                double net = SureHesaplaBakim(m.Start, m.End);
+                totalDeductible += net;
+
+                _context.tb_TalepSureHesap.Add(new tb_TalepSureHesap
+                {
+                    TalepKodu = talepKodu,
+                    BasTar = m.Start,
+                    BitTar = m.End,
+                    Tur = "SONUC",
+                    Aciklama = "Birleştirilmiş Net Kesinti Süresi",
+                    NetSure = (int)net,
+                    SatirTipi = 1,
+                    GrupID = grupID
+                });
+
+                foreach (var o in onaylar)
+                    if (o.KayitTar.Value < m.End && o.IslemTar.Value > m.Start)
+                        _context.tb_TalepSureHesap.Add(new tb_TalepSureHesap
+                        {
+                            TalepKodu = talepKodu,
+                            BasTar = o.KayitTar.Value,
+                            BitTar = o.IslemTar.Value,
+                            Tur = "ONAY",
+                            Aciklama = "Talep Onay Süresi",
+                            RefID = o.TalepAmirID,
+                            NetSure = (int)SureHesaplaBakim(o.KayitTar.Value, o.IslemTar.Value),
+                            SatirTipi = 0,
+                            GrupID = grupID
+                        });
+
+                foreach (var s in sorular)
+                    if (gelismeler.TryGetValue(s.SoruTalepGelismeID.Value, out var gs) && gs.KayitTar != null &&
+                        gelismeler.TryGetValue(s.CevapTalepGelismeID.Value, out var gc) && gc.KayitTar != null &&
+                        gs.KayitTar.Value < m.End && gc.KayitTar.Value > m.Start)
+                        _context.tb_TalepSureHesap.Add(new tb_TalepSureHesap
+                        {
+                            TalepKodu = talepKodu,
+                            BasTar = gs.KayitTar.Value,
+                            BitTar = gc.KayitTar.Value,
+                            Tur = "SORUCEVAP",
+                            Aciklama = "Soru-Cevap Süresi",
+                            RefID = s.TalepSoruCevapID,
+                            NetSure = (int)SureHesaplaBakim(gs.KayitTar.Value, gc.KayitTar.Value),
+                            SatirTipi = 0,
+                            GrupID = grupID
+                        });
+
+                foreach (var i in isEmirleri)
+                    if (i.KayitTar.Value < m.End && i.KapanmaTar.Value > m.Start)
+                        _context.tb_TalepSureHesap.Add(new tb_TalepSureHesap
+                        {
+                            TalepKodu = talepKodu,
+                            BasTar = i.KayitTar.Value,
+                            BitTar = i.KapanmaTar.Value,
+                            Tur = "ISEMRI",
+                            Aciklama = i.Aciklama,
+                            RefID = i.TalepIsEmriID,
+                            NetSure = (int)SureHesaplaBakim(i.KayitTar.Value, i.KapanmaTar.Value),
+                            SatirTipi = 0,
+                            GrupID = grupID
+                        });
+
+                grupID++;
+            }
+
+            // 5. Net MTTR = brüt mesai süresi − birleştirilmiş net kesinti
+            double totalWorking = SureHesaplaBakim(t.KayitTar.Value, t.KapanmaTar.Value);
+            int finalMttr = (int)(totalWorking - totalDeductible);
+            if (finalMttr < 0) finalMttr = 0;
+
+            t.MttrTamamSure = finalMttr;
+            t.IslemSure = finalMttr;
+
+            var tb = _context.tb_TalepBakim.SingleOrDefault(o => o.TalepKodu == talepKodu);
+            t.DurusSure = (tb != null && tb.UretimDurusu != "H") ? finalMttr : 0;
+        }
+
         public bool TalepKontrolKaydet(int kullaniciID, string talepKodu, string eksikSomun, string yag, string miknatis, string fazlaParca, string guvenlik, string makine, string temizlik, string gida)
         {
             var user = _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == kullaniciID);
@@ -1007,11 +1229,16 @@ namespace OyemCore.BusinessLayer.Services
 
                     t.Durum = true;
                     t.KapanmaTar = DateTime.Now;
-                    
-                    if (t.KayitTar.HasValue)
-                        t.MttrTamamSure = SureHesaplaBakim(t.KayitTar.Value, t.KapanmaTar.Value);
 
+                    // Önce kaydet ki TalepSureHesapla, onay/iş emri kayıtlarını (Durum=true,
+                    // IslemTar) DB'den okuyup kesintileri doğru düşebilsin.
                     _context.SaveChanges();
+
+                    // Süre düşümleri: onay + soru-cevap + iş emri süreleri işlem süresinden
+                    // düşülerek net MTTR / IslemSure / DurusSure hesaplanır.
+                    TalepSureHesapla(talepKodu);
+                    _context.SaveChanges();
+
                     transaction.Commit();
                     return true;
                 }
