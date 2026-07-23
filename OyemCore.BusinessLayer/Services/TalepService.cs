@@ -109,7 +109,13 @@ namespace OyemCore.BusinessLayer.Services
 
                 if (!isAdmin)
                 {
-                    queryGeneric = queryGeneric.Where(x => x.t.KayitSicil == user.SicilNo || x.t.SorumluSicil == user.SicilNo);
+                    // Kendi açtığı + sorumlusu olduğu + onayına gönderilen (bekleyen amir).
+                    // Onaya gönderilen talep listede görünmezse onaylayan kişi talebe
+                    // ulaşıp onay/ret veremiyordu (webportal onaylayana talebi gösterir).
+                    queryGeneric = queryGeneric.Where(x =>
+                        x.t.KayitSicil == user.SicilNo ||
+                        x.t.SorumluSicil == user.SicilNo ||
+                        _context.tb_TalepAmir.Any(a => a.TalepKodu == x.t.TalepKodu && a.AmirSicil == user.SicilNo && a.Durum == null));
                 }
 
                 var list = queryGeneric.OrderByDescending(x => x.t.KayitTar).ToList();
@@ -345,7 +351,11 @@ namespace OyemCore.BusinessLayer.Services
                 Tarihce = history,
                 BilgiPersonelleri = bilgiPersonelleri,
                 OnayList = onayList,
-                ActiveOnay = activeOnay,
+                // Frontend bu alanı `onayBilgisi` olarak okur (aktif/bekleyen onay).
+                // Eskiden `ActiveOnay` gönderiliyordu → detailData.onayBilgisi hep
+                // undefined kalıyor, onay/ret ve Bakım kontrol-formu butonları hiç
+                // görünmüyordu (IT/ERP onaylayan + Bakım talep sahibi).
+                OnayBilgisi = activeOnay,
                 SoruList = soruList
             };
         }
