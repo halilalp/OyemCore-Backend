@@ -167,6 +167,11 @@ namespace OyemCore.BusinessLayer.Services
             {
                 var plan = new tb_BakimPlan
                 {
+                    // PlanKodu NOT NULL: ilk insert'te boş string verilir (referans
+                    // BakimPlanKaydet ile aynı), ID alındıktan sonra gerçek kod yazılır.
+                    // Null bırakılınca "an error occurred while saving the entity
+                    // changes" (NOT NULL ihlali) alınıyordu.
+                    PlanKodu = "",
                     HatKodu = hatKodu,
                     BakimTuru = bakimTuru,
                     HedefBaslangic = dtBas,
