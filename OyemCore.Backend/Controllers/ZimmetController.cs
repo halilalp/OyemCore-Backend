@@ -467,7 +467,7 @@ namespace OyemCore.Backend.Controllers
                     MarkaID = model.MarkaID,
                     Miktar = model.Miktar ?? 1,
                     SorumluDepKod = model.SorumluDepKod,
-                    DemirbasKodu = model.DemirbasKodu,
+                    DemirbasKodu = model.DemirbasKodu ?? "",
                     Konum = model.Konum,
                     MasrafMerkezi = model.MasrafMerkezi,
                     AktifAygit = true,
@@ -482,7 +482,15 @@ namespace OyemCore.Backend.Controllers
                 _context.tb_Aygit.Add(asset);
                 _context.SaveChanges();
 
-                return Ok(new { success = true, message = "Demirbas basariyla kaydedildi.", aygitID = asset.AygitID });
+                // Demirbas kodu bos ise sistem uretir (DMB-YYYYAA-ID) — kullanici
+                // formdan girmiyor; kod otomatik atanir.
+                if (string.IsNullOrWhiteSpace(asset.DemirbasKodu))
+                {
+                    asset.DemirbasKodu = $"DMB-{DateTime.Now.Year}{DateTime.Now.Month:00}-{asset.AygitID}";
+                    _context.SaveChanges();
+                }
+
+                return Ok(new { success = true, message = "Demirbas basariyla kaydedildi.", aygitID = asset.AygitID, demirbasKodu = asset.DemirbasKodu });
             }
             catch (Exception ex)
             {
