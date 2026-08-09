@@ -85,12 +85,28 @@ namespace OyemCore.DataLayer.Contexts
         public DbSet<viewTedDegList> viewTedDegList { get; set; }
         public DbSet<tb_SayimAygit> tb_SayimAygit { get; set; }
         public DbSet<viewSayimAygit> viewSayimAygit { get; set; }
+        public DbSet<tb_UserDevices> tb_UserDevices { get; set; }
+        public DbSet<tb_Notification> tb_Notification { get; set; }
+        public DbSet<tb_Chat> tb_Chat { get; set; }
+        public DbSet<tb_ChatGroup> tb_ChatGroup { get; set; }
+        public DbSet<tb_ChatGroupMember> tb_ChatGroupMember { get; set; }
+        public DbSet<tb_MagazaAvans> tb_MagazaAvans { get; set; }
+        public DbSet<tb_MagazaMasraf> tb_MagazaMasraf { get; set; }
+        public DbSet<tb_MagazaMasrafDetay> tb_MagazaMasrafDetay { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
             // Table Name Mappings
+            modelBuilder.Entity<tb_UserDevices>().ToTable("tb_UserDevices").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_Notification>().ToTable("tb_Notification").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_Chat>().ToTable("tb_Chat").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_ChatGroup>().ToTable("tb_ChatGroup").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_ChatGroupMember>().ToTable("tb_ChatGroupMember").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_MagazaAvans>().ToTable("tb_MagazaAvans").HasKey(e => e.AvansID);
+            modelBuilder.Entity<tb_MagazaMasraf>().ToTable("tb_MagazaMasraf").HasKey(e => e.MasrafID);
+            modelBuilder.Entity<tb_MagazaMasrafDetay>().ToTable("tb_MagazaMasrafDetay").HasKey(e => e.DetayID);
             modelBuilder.Entity<tb_Kullanici>().ToTable("tb_Kullanici").HasKey(e => e.KullaniciID);
             modelBuilder.Entity<tb_Ticket>().ToTable("tb_Ticket").HasKey(e => e.ID);
             modelBuilder.Entity<tb_TicketDosya>().ToTable("tb_TicketDosya").HasKey(e => e.ID);

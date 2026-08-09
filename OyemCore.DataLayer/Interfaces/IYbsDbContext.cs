@@ -80,6 +80,14 @@ namespace OyemCore.DataLayer.Interfaces
         DbSet<viewTedDegList> viewTedDegList { get; set; }
         DbSet<tb_SayimAygit> tb_SayimAygit { get; set; }
         DbSet<viewSayimAygit> viewSayimAygit { get; set; }
+        DbSet<tb_UserDevices> tb_UserDevices { get; set; }
+        DbSet<tb_Notification> tb_Notification { get; set; }
+        DbSet<tb_Chat> tb_Chat { get; set; }
+        DbSet<tb_ChatGroup> tb_ChatGroup { get; set; }
+        DbSet<tb_ChatGroupMember> tb_ChatGroupMember { get; set; }
+        DbSet<tb_MagazaAvans> tb_MagazaAvans { get; set; }
+        DbSet<tb_MagazaMasraf> tb_MagazaMasraf { get; set; }
+        DbSet<tb_MagazaMasrafDetay> tb_MagazaMasrafDetay { get; set; }
 
         DatabaseFacade Database { get; }
 

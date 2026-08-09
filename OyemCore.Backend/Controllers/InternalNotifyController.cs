@@ -150,6 +150,22 @@ namespace OyemCore.Backend.Controllers
 
             return Ok(new { success = true });
         }
+
+        [HttpPost("chat")]
+        public async Task<IActionResult> Chat([FromBody] ChatNotifyDto dto)
+        {
+            if (!IsAuthorized()) return Unauthorized();
+            if (dto == null) return BadRequest();
+
+            await _pushService.SendToUserBySicilNoAsync(
+                dto.AliciSicilNo,
+                dto.Baslik,
+                dto.MesajMetni,
+                new { type = "chat", screen = "ChatDetailScreen", sicilNo = dto.GonderenSicilNo, groupCode = dto.GroupCode }
+            );
+
+            return Ok(new { success = true });
+        }
     }
 
     // eventType: "created" | "amirOnaylariCompleted" | "rejected" | "completed"
@@ -188,5 +204,14 @@ namespace OyemCore.Backend.Controllers
     {
         public string EventType { get; set; }
         public string BelgeNo { get; set; }
+    }
+
+    public class ChatNotifyDto
+    {
+        public string GonderenSicilNo { get; set; }
+        public string AliciSicilNo { get; set; }
+        public string Baslik { get; set; }
+        public string MesajMetni { get; set; }
+        public string GroupCode { get; set; }
     }
 }

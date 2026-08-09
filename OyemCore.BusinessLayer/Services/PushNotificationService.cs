@@ -34,15 +34,31 @@ namespace OyemCore.BusinessLayer.Services
                 using (var scope = _scopeFactory.CreateScope())
                 {
                     var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
-                    var user = await context.tb_Kullanici
+                    
+                    var tokens = await context.tb_UserDevices
                         .AsNoTracking()
-                        .FirstOrDefaultAsync(u => u.SicilNo == sicilNo);
+                        .Where(d => d.SicilNo == sicilNo)
+                        .Select(d => d.PushToken)
+                        .ToListAsync();
 
-                    string pushToken = user?.PushToken;
-
-                    if (!string.IsNullOrEmpty(pushToken))
+                    if (tokens.Count == 0)
                     {
-                        await SendExpoNotificationAsync(pushToken, title, body, data);
+                        var user = await context.tb_Kullanici
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(u => u.SicilNo == sicilNo);
+                        
+                        if (user != null && !string.IsNullOrEmpty(user.PushToken))
+                        {
+                            tokens.Add(user.PushToken);
+                        }
+                    }
+
+                    foreach (var token in tokens)
+                    {
+                        if (!string.IsNullOrEmpty(token))
+                        {
+                            await SendExpoNotificationAsync(token, title, body, data);
+                        }
                     }
                 }
             }
@@ -63,11 +79,26 @@ namespace OyemCore.BusinessLayer.Services
                         .AsNoTracking()
                         .FirstOrDefaultAsync(u => u.KullaniciID == kullaniciId);
 
-                    string pushToken = user?.PushToken;
-
-                    if (!string.IsNullOrEmpty(pushToken))
+                    if (user != null)
                     {
-                        await SendExpoNotificationAsync(pushToken, title, body, data);
+                        var tokens = await context.tb_UserDevices
+                            .AsNoTracking()
+                            .Where(d => d.SicilNo == user.SicilNo)
+                            .Select(d => d.PushToken)
+                            .ToListAsync();
+
+                        if (tokens.Count == 0 && !string.IsNullOrEmpty(user.PushToken))
+                        {
+                            tokens.Add(user.PushToken);
+                        }
+
+                        foreach (var token in tokens)
+                        {
+                            if (!string.IsNullOrEmpty(token))
+                            {
+                                await SendExpoNotificationAsync(token, title, body, data);
+                            }
+                        }
                     }
                 }
             }

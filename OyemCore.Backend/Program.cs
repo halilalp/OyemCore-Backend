@@ -16,6 +16,7 @@ builder.WebHost.UseUrls("http://*:5000", "http://*:5140");
 
 // Add services to the container.
 builder.Services.AddControllers();
+builder.Services.AddSignalR();
 
 // Configure EF Core DbContexts
 builder.Services.AddDbContext<MasterDbContext>(options =>
@@ -55,6 +56,10 @@ builder.Services.AddScoped<IProjeToplantiService, ProjeToplantiService>();
 builder.Services.AddScoped<ITakvimService, TakvimService>();
 builder.Services.AddScoped<IHaberService, HaberService>();
 builder.Services.AddScoped<IEgitimService, EgitimService>();
+builder.Services.AddScoped<IBildirimService, BildirimService>();
+builder.Services.AddScoped<IAvansMasrafService, AvansMasrafService>();
+builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddSingleton<IChatRealtimeDispatcher, OyemCore.Backend.Hubs.ChatRealtimeDispatcher>();
 
 // Configure CORS
 builder.Services.AddCors(options =>
@@ -172,5 +177,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<OyemCore.Backend.Hubs.ChatHub>("/hubs/chat");
 
 app.Run();

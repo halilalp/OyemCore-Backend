@@ -331,7 +331,7 @@ namespace OyemCore.BusinessLayer.Services
         {
             try
             {
-                // Clear this token from any other users to prevent multiple users receiving notifications on the same device
+                // Clear this token from any other users in tb_Kullanici
                 var otherUsers = _context.tb_Kullanici
                     .Where(u => u.KullaniciID != kullaniciID && u.PushToken == token)
                     .ToList();
@@ -341,12 +341,41 @@ namespace OyemCore.BusinessLayer.Services
                     ou.PushToken = null;
                 }
 
+                // Clear this token from other devices in tb_UserDevices
+                var otherDevices = _context.tb_UserDevices
+                    .Where(d => d.PushToken == token)
+                    .ToList();
+                _context.tb_UserDevices.RemoveRange(otherDevices);
+
                 var user = _context.tb_Kullanici
                     .FirstOrDefault(u => u.KullaniciID == kullaniciID);
 
                 if (user != null)
                 {
                     user.PushToken = token;
+
+                    if (!string.IsNullOrEmpty(user.SicilNo))
+                    {
+                        var device = _context.tb_UserDevices
+                            .FirstOrDefault(d => d.SicilNo == user.SicilNo && d.PushToken == token);
+
+                        if (device == null)
+                        {
+                            device = new tb_UserDevices
+                            {
+                                SicilNo = user.SicilNo,
+                                PushToken = token,
+                                DeviceType = token.StartsWith("ExponentPushToken") ? "Expo" : "Device",
+                                KayitTarihi = DateTime.Now,
+                                SonGirisTarihi = DateTime.Now
+                            };
+                            _context.tb_UserDevices.Add(device);
+                        }
+                        else
+                        {
+                            device.SonGirisTarihi = DateTime.Now;
+                        }
+                    }
                 }
                 
                 _context.SaveChanges();
@@ -367,6 +396,13 @@ namespace OyemCore.BusinessLayer.Services
                 if (user != null)
                 {
                     user.PushToken = null;
+                    if (!string.IsNullOrEmpty(user.SicilNo))
+                    {
+                        var devices = _context.tb_UserDevices
+                            .Where(d => d.SicilNo == user.SicilNo)
+                            .ToList();
+                        _context.tb_UserDevices.RemoveRange(devices);
+                    }
                     _context.SaveChanges();
                 }
             }

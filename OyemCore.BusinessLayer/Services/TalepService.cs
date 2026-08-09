@@ -14,11 +14,13 @@ namespace OyemCore.BusinessLayer.Services
     {
         private readonly IYbsDbContext _context;
         private readonly IPushNotificationService _pushNotificationService;
+        private readonly IBildirimService _bildirim;
 
-        public TalepService(IYbsDbContext context, IPushNotificationService pushNotificationService)
+        public TalepService(IYbsDbContext context, IPushNotificationService pushNotificationService, IBildirimService bildirim)
         {
             _context = context;
             _pushNotificationService = pushNotificationService;
+            _bildirim = bildirim;
         }
 
         private bool HasAuthority(string adminBelgeTur, string turKodu)
@@ -1374,6 +1376,13 @@ namespace OyemCore.BusinessLayer.Services
                     };
                     _context.tb_TalepAmir.Add(formOnayi);
                     BelgeTarihceKaydet(t.TalepKodu, "Form Onayına Gönderildi", $"Talep sahibi {t.KayitSicil} form onayı bekleniyor.");
+
+                    // Talep sahibine "onayınıza gönderildi" bildirimi (zil) + push. Mobil
+                    // akışta bu tetiklenmiyordu; kullanıcıya "tamamlandı" gibi görünüyordu.
+                    _bildirim.AddNotification(t.KayitSicil, "Bakım Talebi Onayınızda",
+                        $"'{t.Konu}' konulu talep ({t.TalepKodu}) form onayınıza gönderildi.",
+                        "", "Bakim", t.TalepID.ToString(), kullaniciID);
+                    _ = _pushNotificationService.NotifyTalepOnayaGonderildiAsync(t.TalepID, t.KayitSicil);
                 }
                 else
                 {
