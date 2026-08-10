@@ -13,6 +13,7 @@ namespace OyemCore.BusinessLayer.Dtos
         public string MakineKodu { get; set; }
         public string MakineAdi { get; set; }
         public string KayitSicil { get; set; }
+        public string KayitYapan { get; set; }
         public DateTime? KayitTar { get; set; }
     }
 }

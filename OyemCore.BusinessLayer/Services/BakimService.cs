@@ -491,6 +491,8 @@ namespace OyemCore.BusinessLayer.Services
                         from st in sts.DefaultIfEmpty()
                         join m in _context.tb_Makine on s.MakineKodu equals m.MakineKodu into ms
                         from m in ms.DefaultIfEmpty()
+                        join p in _context.tb_Personel on s.KayitSicil equals p.SicilNo into ps
+                        from p in ps.DefaultIfEmpty()
                         where s.KontrolKodu == kontrolKodu
                         orderby s.KayitTar descending
                         select new PeriyodikSarfiyatDto
@@ -504,6 +506,7 @@ namespace OyemCore.BusinessLayer.Services
                             MakineKodu = s.MakineKodu,
                             MakineAdi = m != null ? m.MakineAdi : "",
                             KayitSicil = s.KayitSicil,
+                            KayitYapan = p != null ? p.AdSoyad : "",
                             KayitTar = s.KayitTar
                         };
 
@@ -548,6 +551,8 @@ namespace OyemCore.BusinessLayer.Services
                         from st in sts.DefaultIfEmpty()
                         join m in _context.tb_Makine on s.MakineKodu equals m.MakineKodu into ms
                         from m in ms.DefaultIfEmpty()
+                        join p in _context.tb_Personel on s.KayitSicil equals p.SicilNo into ps
+                        from p in ps.DefaultIfEmpty()
                         where s.PlanKodu == planKodu
                         orderby s.KayitTar descending
                         select new BakimSarfiyatDto
@@ -561,6 +566,7 @@ namespace OyemCore.BusinessLayer.Services
                             MakineKodu = s.MakineKodu,
                             MakineAdi = m != null ? m.MakineAdi : "",
                             KayitSicil = s.KayitSicil,
+                            KayitYapan = p != null ? p.AdSoyad : "",
                             KayitTar = s.KayitTar
                         };
 
