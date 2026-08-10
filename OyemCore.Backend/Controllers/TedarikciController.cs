@@ -815,11 +815,7 @@ namespace OyemCore.Backend.Controllers
         {
             try
             {
-                var tedarikciler = _context.tb_Tedarikci.AsNoTracking()
-                    .Where(t => t.Durum == true)
-                    .OrderBy(t => t.Unvan)
-                    .Select(t => new { id = t.TedarikciKodu, name = t.Unvan })
-                    .ToList();
+                var tedarikciler = new List<object>();
 
                 var turler = new List<object>();
                 try
@@ -868,6 +864,35 @@ namespace OyemCore.Backend.Controllers
             catch (Exception ex)
             {
                 return BadRequest(new { message = $"Veriler alinamadi: {ex.Message}" });
+            }
+        }
+
+        [HttpGet("search")]
+        public IActionResult SearchTedarikciler([FromQuery] string query, [FromQuery] int limit = 50)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(query) || query.Length < 3)
+                {
+                    return Ok(new List<object>());
+                }
+
+                string searchLower = query.ToLower().Replace(" ", "");
+                var list = _context.tb_Tedarikci.AsNoTracking()
+                    .Where(t => t.Durum == true && (
+                        (t.TedarikciKodu != null && t.TedarikciKodu.ToLower().Contains(searchLower)) ||
+                        (t.Unvan != null && t.Unvan.ToLower().Contains(searchLower))
+                    ))
+                    .OrderBy(t => t.Unvan)
+                    .Take(limit)
+                    .Select(t => new { id = t.TedarikciKodu, name = t.Unvan })
+                    .ToList();
+
+                return Ok(list);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Tedarikçi arama hatasi: {ex.Message}" });
             }
         }
     }
