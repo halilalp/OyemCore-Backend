@@ -9,7 +9,7 @@ namespace OyemCore.BusinessLayer.Interfaces
         IEnumerable<object> GetIzinApprovals(int kullaniciID);
         bool SaveIzinRequest(int kullaniciID, tb_IzinOnay request);
         bool ApproveIzinRequest(int kullaniciID, int izinOnayID);
-        bool RejectIzinRequest(int kullaniciID, int izinOnayID);
+        bool RejectIzinRequest(int kullaniciID, int izinOnayID, string aciklama);
         IEnumerable<object> GetIzinHistory(string belgeNo);
     }
 }

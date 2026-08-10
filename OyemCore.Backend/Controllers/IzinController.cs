@@ -113,12 +113,12 @@ namespace OyemCore.Backend.Controllers
         /// <param name="id">Reddedilecek izin talebinin ID degeri.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("{id}/reject")]
-        public IActionResult Reject(int id)
+        public IActionResult Reject(int id, [FromBody] IzinRejectRequest req)
         {
             try
             {
                 int userId = GetCurrentUserId();
-                bool success = _izinService.RejectIzinRequest(userId, id);
+                bool success = _izinService.RejectIzinRequest(userId, id, req?.Aciklama);
                 return Ok(new { success, message = "Talep reddedildi." });
             }
             catch (Exception ex)
@@ -144,6 +144,11 @@ namespace OyemCore.Backend.Controllers
             {
                 return BadRequest(new { message = ex.Message });
             }
+        }
+
+        public class IzinRejectRequest
+        {
+            public string Aciklama { get; set; }
         }
     }
 }

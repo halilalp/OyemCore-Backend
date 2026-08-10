@@ -12,11 +12,13 @@ namespace OyemCore.BusinessLayer.Services
     {
         private readonly IYbsDbContext _context;
         private readonly IPushNotificationService _pushNotificationService;
+        private readonly INotificationService _notificationService;
 
-        public IzinService(IYbsDbContext context, IPushNotificationService pushNotificationService)
+        public IzinService(IYbsDbContext context, IPushNotificationService pushNotificationService, INotificationService notificationService)
         {
             _context = context;
             _pushNotificationService = pushNotificationService;
+            _notificationService = notificationService;
         }
 
         public (bool Success, string Message) CustomError(string msg) => (false, msg);
@@ -181,6 +183,24 @@ namespace OyemCore.BusinessLayer.Services
 
             _ = _pushNotificationService.NotifyNewLeaveRequestAsync(request.IzinOnayID);
 
+            // Mail gönderimi (Talep Eden)
+            if (!string.IsNullOrEmpty(user.Eposta))
+            {
+                _ = _notificationService.SendMailAsync("OyemCore İzin", "İzin Talebiniz Alındı", 
+                    $"Merhaba {user.AdSoyad},<br/><br/>{code} nolu izin talebiniz başarıyla oluşturulmuş ve amir onayına sunulmuştur.<br/><b>İzin Türü:</b> {request.IzinTuru}<br/><b>Çıkış Tarihi:</b> {request.CikisTar:dd.MM.yyyy}<br/><b>İş Başı Tarihi:</b> {request.IsBasiTar:dd.MM.yyyy}<br/><b>İş Günü:</b> {request.IsGunu}<br/><br/>İyi çalışmalar dileriz.", user.Eposta);
+            }
+
+            // Mail gönderimi (Bekleyen Amir)
+            if (!string.IsNullOrEmpty(amir1))
+            {
+                var amirEposta = _context.tb_Kullanici.AsNoTracking().Where(k => k.SicilNo == amir1 && !string.IsNullOrEmpty(k.Eposta)).Select(k => k.Eposta).FirstOrDefault();
+                if (!string.IsNullOrEmpty(amirEposta))
+                {
+                    _ = _notificationService.SendMailAsync("OyemCore İzin", "Yeni İzin Onay Talebi", 
+                        $"Merhaba,<br/><br/>{user.AdSoyad} tarafından oluşturulan {code} nolu izin talebi onayınızda beklemektedir.<br/><b>İzin Türü:</b> {request.IzinTuru}<br/><b>Çıkış Tarihi:</b> {request.CikisTar:dd.MM.yyyy}<br/><b>İş Başı Tarihi:</b> {request.IsBasiTar:dd.MM.yyyy}<br/><b>İş Günü:</b> {request.IsGunu}<br/><b>Açıklama:</b> {request.Aciklama}<br/><br/>İyi çalışmalar dileriz.", amirEposta);
+                }
+            }
+
             return true;
         }
 
@@ -232,6 +252,13 @@ namespace OyemCore.BusinessLayer.Services
                 BelgeTarihceKaydet(request.BelgeNo, "Izin Onaylandi (IK)", $"Izin talebi IK tarafindan onaylandi ve tamamlandi. (Islem Yapan: {user.AdSoyad})");
 
                 _ = _pushNotificationService.NotifyLeaveRequestCompletedAsync(request.IzinOnayID, user.KullaniciID);
+
+                // Mail gönderimi (Talep Sahibine)
+                if (!string.IsNullOrEmpty(request.KayitEposta))
+                {
+                    _ = _notificationService.SendMailAsync("OyemCore İzin", "İzin Talebiniz Onaylandı", 
+                        $"Merhaba,<br/><br/>{request.BelgeNo} nolu izin talebiniz İnsan Kaynakları (IK) tarafından onaylanmış ve süreç tamamlanmıştır.<br/><b>İşlem Yapan:</b> {user.AdSoyad}<br/><b>İzin Türü:</b> {request.IzinTuru}<br/><b>İş Günü:</b> {request.IsGunu}<br/><br/>İyi çalışmalar dileriz.", request.KayitEposta);
+                }
 
                 return true;
             }
@@ -296,6 +323,13 @@ namespace OyemCore.BusinessLayer.Services
                     BelgeTarihceKaydet(request.BelgeNo, "Izin Onaylandi", $"Izin talebi amir onaylarindan geçerek IK onayina sevk edildi. (Son Onaylayan: {user.AdSoyad})");
 
                     _ = _pushNotificationService.NotifyLeaveManagerApprovalsCompletedAsync(request.IzinOnayID);
+
+                    // Mail gönderimi (Talep Sahibine - IK Sevk Bilgilendirmesi)
+                    if (!string.IsNullOrEmpty(request.KayitEposta))
+                    {
+                        _ = _notificationService.SendMailAsync("OyemCore İzin", "İzin Talebi Süreç Güncellemesi", 
+                            $"Merhaba,<br/><br/>{request.BelgeNo} nolu izin talebinizin amir onay süreci tamamlanmış olup, son onay için İnsan Kaynakları (IK) birimine sevk edilmiştir.<br/><b>Son Onaylayan:</b> {user.AdSoyad}<br/><br/>İyi çalışmalar dileriz.", request.KayitEposta);
+                    }
                 }
                 else
                 {
@@ -308,13 +342,24 @@ namespace OyemCore.BusinessLayer.Services
                     BelgeTarihceKaydet(request.BelgeNo, "Izin Kismi Onay", $"Izin talebi onaylandi, bir sonraki onay asamasina geçildi. (Onaylayan: {user.AdSoyad})");
 
                     _ = _pushNotificationService.NotifyNewLeaveRequestAsync(request.IzinOnayID);
+
+                    // Mail gönderimi (Sonraki Bekleyen Amir)
+                    if (!string.IsNullOrEmpty(nextAmir))
+                    {
+                        var nextAmirEposta = _context.tb_Kullanici.AsNoTracking().Where(k => k.SicilNo == nextAmir && !string.IsNullOrEmpty(k.Eposta)).Select(k => k.Eposta).FirstOrDefault();
+                        if (!string.IsNullOrEmpty(nextAmirEposta))
+                        {
+                            _ = _notificationService.SendMailAsync("OyemCore İzin", "Yeni İzin Onay Talebi", 
+                                $"Merhaba,<br/><br/>Onayınızda bekleyen {request.BelgeNo} nolu izin talebi bulunmaktadır.<br/><b>Talep Eden:</b> {nextAmirName}<br/><b>Önceki Onaylayan:</b> {user.AdSoyad}<br/><br/>İyi çalışmalar dileriz.", nextAmirEposta);
+                        }
+                    }
                 }
 
                 return true;
             }
         }
 
-        public bool RejectIzinRequest(int kullaniciID, int izinOnayID)
+        public bool RejectIzinRequest(int kullaniciID, int izinOnayID, string aciklama)
         {
             var user = _context.tb_Kullanici
                 .AsNoTracking()
@@ -339,20 +384,29 @@ namespace OyemCore.BusinessLayer.Services
                     approvalRecord.OnaySicil = user.SicilNo;
                     approvalRecord.Durum = false;
                     approvalRecord.IslemTar = DateTime.Now;
-                    approvalRecord.Aciklama = "IK Tarafindan Reddedildi";
+                    approvalRecord.Aciklama = string.IsNullOrEmpty(aciklama) ? "IK Tarafindan Reddedildi" : aciklama;
                 }
 
                 // Final Rejection Details
                 request.BekleyenOnay = null;
                 request.Durum = false;
                 request.SurecDurum = "REDDEDILDI";
-                request.SonDurumBilgi = $"Talep {user.AdSoyad} tarafindan reddedildi. ({DateTime.Now:dd.MM.yyyy HH:mm})";
+                request.SonDurumBilgi = string.IsNullOrEmpty(aciklama)
+                    ? $"Talep {user.AdSoyad} tarafindan reddedildi. ({DateTime.Now:dd.MM.yyyy HH:mm})"
+                    : $"Talep {user.AdSoyad} tarafindan reddedildi. Açıklama: {aciklama} ({DateTime.Now:dd.MM.yyyy HH:mm})";
 
                 _context.SaveChanges();
 
-                BelgeTarihceKaydet(request.BelgeNo, "Izin Reddedildi (IK)", $"Izin talebi IK tarafindan reddedildi. (Reddeden: {user.AdSoyad})");
+                BelgeTarihceKaydet(request.BelgeNo, "Izin Reddedildi (IK)", $"Izin talebi IK tarafindan reddedildi. (Reddeden: {user.AdSoyad}{(string.IsNullOrEmpty(aciklama) ? "" : $", Açıklama: {aciklama}")})");
 
                 _ = _pushNotificationService.NotifyLeaveRequestRejectedAsync(request.IzinOnayID, user.KullaniciID);
+
+                // Mail gönderimi (Talep Sahibine)
+                if (!string.IsNullOrEmpty(request.KayitEposta))
+                {
+                    _ = _notificationService.SendMailAsync("OyemCore İzin", "İzin Talebiniz Reddedildi", 
+                        $"Merhaba,<br/><br/>{request.BelgeNo} nolu izin talebiniz İnsan Kaynakları (IK) tarafından reddedilmiştir.<br/><b>İşlem Yapan:</b> {user.AdSoyad}<br/>{(string.IsNullOrEmpty(aciklama) ? "" : $"<b>Açıklama:</b> {aciklama}<br/>")}<br/>İyi çalışmalar dileriz.", request.KayitEposta);
+                }
 
                 return true;
             }
@@ -367,18 +421,27 @@ namespace OyemCore.BusinessLayer.Services
                 {
                     approvalRecord.Durum = false;
                     approvalRecord.IslemTar = DateTime.Now;
-                    approvalRecord.Aciklama = "Reddedildi";
+                    approvalRecord.Aciklama = string.IsNullOrEmpty(aciklama) ? "Reddedildi" : aciklama;
                 }
 
                 request.BekleyenOnay = null;
                 request.Durum = false;
                 request.SurecDurum = "REDDEDILDI";
-                request.SonDurumBilgi = $"{user.AdSoyad} Tarafindan Reddedildi. ({DateTime.Now:dd.MM.yyyy HH:mm})";
+                request.SonDurumBilgi = string.IsNullOrEmpty(aciklama)
+                    ? $"{user.AdSoyad} Tarafindan Reddedildi. ({DateTime.Now:dd.MM.yyyy HH:mm})"
+                    : $"{user.AdSoyad} Tarafindan Reddedildi. Açıklama: {aciklama} ({DateTime.Now:dd.MM.yyyy HH:mm})";
                 _context.SaveChanges();
 
-                BelgeTarihceKaydet(request.BelgeNo, "Izin Reddedildi", $"Izin talebi reddedildi. (Reddeden: {user.AdSoyad})");
+                BelgeTarihceKaydet(request.BelgeNo, "Izin Reddedildi", $"Izin talebi reddedildi. (Reddeden: {user.AdSoyad}{(string.IsNullOrEmpty(aciklama) ? "" : $", Açıklama: {aciklama}")})");
 
                 _ = _pushNotificationService.NotifyLeaveRequestRejectedAsync(request.IzinOnayID, user.KullaniciID);
+
+                // Mail gönderimi (Talep Sahibine)
+                if (!string.IsNullOrEmpty(request.KayitEposta))
+                {
+                    _ = _notificationService.SendMailAsync("OyemCore İzin", "İzin Talebiniz Reddedildi", 
+                        $"Merhaba,<br/><br/>{request.BelgeNo} nolu izin talebiniz amiriniz {user.AdSoyad} tarafından reddedilmiştir.<br/><br/>İyi çalışmalar dileriz.", request.KayitEposta);
+                }
 
                 return true;
             }
