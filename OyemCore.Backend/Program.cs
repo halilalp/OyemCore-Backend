@@ -58,6 +58,7 @@ builder.Services.AddScoped<IHaberService, HaberService>();
 builder.Services.AddScoped<IEgitimService, EgitimService>();
 builder.Services.AddScoped<IBildirimService, BildirimService>();
 builder.Services.AddScoped<IAvansMasrafService, AvansMasrafService>();
+builder.Services.AddScoped<IBordroService, BordroService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddSingleton<IChatRealtimeDispatcher, OyemCore.Backend.Hubs.ChatRealtimeDispatcher>();
 

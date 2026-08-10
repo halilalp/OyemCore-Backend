@@ -228,19 +228,15 @@ namespace OyemCore.BusinessLayer.Services
 
             _context.SaveChanges();
 
-            if (!string.IsNullOrEmpty(note))
+            var tarihce = new tb_BelgeTarihce
             {
-                var detay = new tb_BakimPlanDetay
-                {
-                    PlanKodu = planKodu,
-                    IslemNotu = note,
-                    KayitSicil = sicil,
-                    KayitTar = DateTime.Now,
-                    DosyaUrl = dosyaUrl
-                };
-                _context.tb_BakimPlanDetay.Add(detay);
-                _context.SaveChanges();
-            }
+                BelgeKodu = planKodu,
+                Konu = "Durum Güncellemesi",
+                Aciklama = string.IsNullOrEmpty(note) ? $"Plan durumu {durum} olarak güncellendi." : note,
+                KayitTar = DateTime.Now
+            };
+            _context.tb_BelgeTarihce.Add(tarihce);
+            _context.SaveChanges();
 
             return true;
         }
@@ -264,6 +260,21 @@ namespace OyemCore.BusinessLayer.Services
                         };
 
             return query.ToList();
+        }
+
+        public bool SavePlanGelisme(string planKodu, string aciklama, string dosyaUrl, string sicil)
+        {
+            var detay = new tb_BakimPlanDetay
+            {
+                PlanKodu = planKodu,
+                IslemNotu = aciklama,
+                KayitSicil = sicil,
+                KayitTar = DateTime.Now,
+                DosyaUrl = dosyaUrl
+            };
+            _context.tb_BakimPlanDetay.Add(detay);
+            _context.SaveChanges();
+            return true;
         }
 
         public bool DeleteBakimPlan(string planKodu)
@@ -439,18 +450,15 @@ namespace OyemCore.BusinessLayer.Services
 
             _context.SaveChanges();
 
-            if (!string.IsNullOrEmpty(aciklama))
+            var tarihce = new tb_BelgeTarihce
             {
-                var detay = new tb_BakimPerKontrolDetay
-                {
-                    KontrolKodu = kontrolKodu,
-                    IslemNotu = aciklama,
-                    KayitSicil = sicil,
-                    KayitTar = DateTime.Now
-                };
-                _context.tb_BakimPerKontrolDetay.Add(detay);
-                _context.SaveChanges();
-            }
+                BelgeKodu = kontrolKodu,
+                Konu = "Durum Güncellemesi",
+                Aciklama = string.IsNullOrEmpty(aciklama) ? $"Kontrol durumu {status} olarak güncellendi." : aciklama,
+                KayitTar = DateTime.Now
+            };
+            _context.tb_BelgeTarihce.Add(tarihce);
+            _context.SaveChanges();
 
             return true;
         }

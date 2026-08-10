@@ -457,6 +457,21 @@ namespace OyemCore.Backend.Controllers
             }
         }
 
+        [HttpPost("plan/{code}/gelisme")]
+        public IActionResult SavePlanGelisme(string code, [FromBody] SavePlanGelismeRequest request)
+        {
+            try
+            {
+                var sicil = GetCurrentSicilNo();
+                bool success = _bakimService.SavePlanGelisme(code, request.Aciklama, request.DosyaUrl, sicil);
+                return Ok(new { success });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
+        }
+
         /// <summary>
         /// Periyodik kontrole ait bir gelisme/not kaydini siler.
         /// </summary>

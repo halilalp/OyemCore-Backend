@@ -12,6 +12,7 @@ namespace OyemCore.BusinessLayer.Interfaces
         string SaveBakimPlan(string planKodu, string hatKodu, string bakimTuru, string basTar, string bitTar, string sicil);
         bool UpdateBakimPlanStatus(string planKodu, string durum, string note, string dosyaUrl, string sicil);
         IEnumerable<BakimPlanDetayDto> GetBakimNotlari(string planKodu);
+        bool SavePlanGelisme(string planKodu, string aciklama, string dosyaUrl, string sicil);
         bool DeleteBakimPlan(string planKodu);
         bool DeleteBakimGelisme(int id);
         (IEnumerable<PeriyodikKontrolDto> Data, int TotalCount) GetPeriyodikKontrolList(string sirket, string bolum, string durum, string kontrolTuru, string arama, int pageIndex, int pageSize);

@@ -183,17 +183,53 @@ namespace OyemCore.BusinessLayer.Services
             var usr = CurrentUser(kullaniciID);
             if (usr == null) return new List<object>();
 
-            return (from a in _context.tb_MagazaAvans
-                    where a.TalepEdenSicil == usr.SicilNo
-                    join p in _context.tb_Personel on a.BekleyenOnay equals p.SicilNo into pj
-                    from p in pj.DefaultIfEmpty()
-                    orderby a.TalepTarihi descending
-                    select new
+            var avanslar = _context.tb_MagazaAvans
+                .Where(a => a.TalepEdenSicil == usr.SicilNo)
+                .OrderByDescending(a => a.TalepTarihi)
+                .ToList();
+
+            var list = new List<object>();
+            foreach (var a in avanslar)
+            {
+                string bekleyenAd = null;
+                if (!string.IsNullOrEmpty(a.BekleyenOnay))
+                {
+                    bekleyenAd = _context.tb_Personel
+                        .Where(p => p.SicilNo == a.BekleyenOnay)
+                        .Select(p => p.AdSoyad)
+                        .FirstOrDefault();
+                }
+
+                string islemYapanSicil = null;
+                string islemYapanAd = null;
+
+                if (a.SurecDurum == "ONAYLANDI" || a.SurecDurum == "REDDEDILDI" || a.SurecDurum == "ODENDI")
+                {
+                    var sonOnay = _context.tb_BelgeOnay
+                        .Where(o => o.BelgeNo == a.BelgeNo && o.Durum != null)
+                        .OrderByDescending(o => o.IslemTar)
+                        .FirstOrDefault();
+
+                    if (sonOnay != null)
                     {
-                        a.AvansID, a.BelgeNo, a.TalepEdenSicil, a.Tutar, a.Aciklama,
-                        a.SurecDurum, a.BekleyenOnay, a.KalanBakiye, a.TalepTarihi,
-                        BekleyenOnayAdSoyad = p != null ? p.AdSoyad : null
-                    }).ToList();
+                        islemYapanSicil = sonOnay.OnaySicil;
+                        islemYapanAd = _context.tb_Personel
+                            .Where(p => p.SicilNo == sonOnay.OnaySicil)
+                            .Select(p => p.AdSoyad)
+                            .FirstOrDefault() ?? sonOnay.OnaySicil;
+                    }
+                }
+
+                list.Add(new
+                {
+                    a.AvansID, a.BelgeNo, a.TalepEdenSicil, a.Tutar, a.Aciklama,
+                    a.SurecDurum, a.BekleyenOnay, a.KalanBakiye, a.TalepTarihi,
+                    BekleyenOnayAdSoyad = bekleyenAd,
+                    IslemYapanSicil = islemYapanSicil,
+                    IslemYapanAdSoyad = islemYapanAd
+                });
+            }
+            return list;
         }
 
         // ── 4. Masraf listesi (kendi talepleri) ──
@@ -202,17 +238,53 @@ namespace OyemCore.BusinessLayer.Services
             var usr = CurrentUser(kullaniciID);
             if (usr == null) return new List<object>();
 
-            return (from m in _context.tb_MagazaMasraf
-                    where m.TalepEdenSicil == usr.SicilNo
-                    join p in _context.tb_Personel on m.BekleyenOnay equals p.SicilNo into pj
-                    from p in pj.DefaultIfEmpty()
-                    orderby m.TalepTarihi descending
-                    select new
+            var masraflar = _context.tb_MagazaMasraf
+                .Where(m => m.TalepEdenSicil == usr.SicilNo)
+                .OrderByDescending(m => m.TalepTarihi)
+                .ToList();
+
+            var list = new List<object>();
+            foreach (var m in masraflar)
+            {
+                string bekleyenAd = null;
+                if (!string.IsNullOrEmpty(m.BekleyenOnay))
+                {
+                    bekleyenAd = _context.tb_Personel
+                        .Where(p => p.SicilNo == m.BekleyenOnay)
+                        .Select(p => p.AdSoyad)
+                        .FirstOrDefault();
+                }
+
+                string islemYapanSicil = null;
+                string islemYapanAd = null;
+
+                if (m.SurecDurum == "ONAYLANDI" || m.SurecDurum == "REDDEDILDI" || m.SurecDurum == "ODENDI")
+                {
+                    var sonOnay = _context.tb_BelgeOnay
+                        .Where(o => o.BelgeNo == m.BelgeNo && o.Durum != null)
+                        .OrderByDescending(o => o.IslemTar)
+                        .FirstOrDefault();
+
+                    if (sonOnay != null)
                     {
-                        m.MasrafID, m.BelgeNo, m.TalepEdenSicil, m.ToplamTutar, m.Aciklama,
-                        m.SurecDurum, m.BekleyenOnay, m.IliskiliAvansID, m.TalepTarihi,
-                        BekleyenOnayAdSoyad = p != null ? p.AdSoyad : null
-                    }).ToList();
+                        islemYapanSicil = sonOnay.OnaySicil;
+                        islemYapanAd = _context.tb_Personel
+                            .Where(p => p.SicilNo == sonOnay.OnaySicil)
+                            .Select(p => p.AdSoyad)
+                            .FirstOrDefault() ?? sonOnay.OnaySicil;
+                    }
+                }
+
+                list.Add(new
+                {
+                    m.MasrafID, m.BelgeNo, m.TalepEdenSicil, m.ToplamTutar, m.Aciklama,
+                    m.SurecDurum, m.BekleyenOnay, m.IliskiliAvansID, m.TalepTarihi,
+                    BekleyenOnayAdSoyad = bekleyenAd,
+                    IslemYapanSicil = islemYapanSicil,
+                    IslemYapanAdSoyad = islemYapanAd
+                });
+            }
+            return list;
         }
 
         // ── 5. Masraf detay (kalemler) ──
@@ -221,10 +293,44 @@ namespace OyemCore.BusinessLayer.Services
             var masraf = _context.tb_MagazaMasraf.FirstOrDefault(m => m.MasrafID == masrafID);
             if (masraf == null) return new { success = false, message = "Masraf bulunamadı." };
 
+            string islemYapanSicil = null;
+            string islemYapanAd = null;
+
+            if (masraf.SurecDurum == "ONAYLANDI" || masraf.SurecDurum == "REDDEDILDI" || masraf.SurecDurum == "ODENDI")
+            {
+                var sonOnay = _context.tb_BelgeOnay
+                    .Where(o => o.BelgeNo == masraf.BelgeNo && o.Durum != null)
+                    .OrderByDescending(o => o.IslemTar)
+                    .FirstOrDefault();
+
+                if (sonOnay != null)
+                {
+                    islemYapanSicil = sonOnay.OnaySicil;
+                    islemYapanAd = _context.tb_Personel
+                        .Where(p => p.SicilNo == sonOnay.OnaySicil)
+                        .Select(p => p.AdSoyad)
+                        .FirstOrDefault() ?? sonOnay.OnaySicil;
+                }
+            }
+
             var kalemler = _context.tb_MagazaMasrafDetay.Where(d => d.MasrafID == masrafID)
                 .Select(d => new { d.DetayID, d.FisNo, d.Firma, d.Tarih, d.Tutar, d.KdvTutar, d.Aciklama, d.DosyaYolu }).ToList();
 
-            return new { success = true, masraf = new { masraf.MasrafID, masraf.BelgeNo, masraf.ToplamTutar, masraf.Aciklama, masraf.SurecDurum }, kalemler };
+            return new
+            {
+                success = true,
+                masraf = new
+                {
+                    masraf.MasrafID,
+                    masraf.BelgeNo,
+                    masraf.ToplamTutar,
+                    masraf.Aciklama,
+                    masraf.SurecDurum,
+                    IslemYapanSicil = islemYapanSicil,
+                    IslemYapanAdSoyad = islemYapanAd
+                },
+                kalemler
+            };
         }
 
         // ── 6. Onay bekleyen talepler (avans + masraf birleşik) ──

@@ -48,6 +48,12 @@ namespace OyemCore.BusinessLayer.Dtos
         public string DosyaUrl { get; set; }
     }
 
+    public class SavePlanGelismeRequest
+    {
+        public string Aciklama { get; set; }
+        public string DosyaUrl { get; set; }
+    }
+
     // Response DTOs for generic paginated lists
     public class PaginatedListDto<T>
     {

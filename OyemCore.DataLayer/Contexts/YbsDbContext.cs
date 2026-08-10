@@ -93,6 +93,7 @@ namespace OyemCore.DataLayer.Contexts
         public DbSet<tb_MagazaAvans> tb_MagazaAvans { get; set; }
         public DbSet<tb_MagazaMasraf> tb_MagazaMasraf { get; set; }
         public DbSet<tb_MagazaMasrafDetay> tb_MagazaMasrafDetay { get; set; }
+        public DbSet<tb_Bordro> tb_Bordro { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -165,6 +166,7 @@ namespace OyemCore.DataLayer.Contexts
             modelBuilder.Entity<viewTedDegList>().ToView("viewTedDegList").HasKey(e => e.TedDegID);
             modelBuilder.Entity<tb_SayimAygit>().ToTable("tb_SayimAygit").HasKey(e => e.AygitID);
             modelBuilder.Entity<viewSayimAygit>().ToView("ViewSayimAygit").HasKey(e => e.AygitID);
+            modelBuilder.Entity<tb_Bordro>().ToTable("tb_Bordro").HasKey(e => e.BordroID);
         }
     }
 }
