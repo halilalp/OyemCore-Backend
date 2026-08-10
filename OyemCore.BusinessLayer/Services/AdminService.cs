@@ -440,6 +440,7 @@ namespace OyemCore.BusinessLayer.Services
                     SicilNo = currentUser.SicilNo,
                     Konu = "LOG [Mobil]",
                     Aciklama = $"Kullanici Yetkileri Güncellendi. (KullaniciID:{userId})",
+                    Cihaz = "mobil",
                     KayitTar = DateTime.Now
                 };
                 _context.tb_Log.Add(log);

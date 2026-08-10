@@ -101,6 +101,7 @@ namespace OyemCore.Backend.Controllers
                     SicilNo = user.SicilNo,
                     Konu = $"DEMIRBAS_HATA - AygitID: {model.AygitId} [Mobil]",
                     Aciklama = $"Zimmetli personel hata/itiraz bildirdi: {model.Aciklama}",
+                    Cihaz = "mobil",
                     KayitTar = DateTime.Now
                 });
 

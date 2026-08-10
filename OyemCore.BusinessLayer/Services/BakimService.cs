@@ -233,6 +233,7 @@ namespace OyemCore.BusinessLayer.Services
                 BelgeKodu = planKodu,
                 Konu = "Durum Güncellemesi",
                 Aciklama = string.IsNullOrEmpty(note) ? $"Plan durumu {durum} olarak güncellendi." : note,
+                Cihaz = "mobil",
                 KayitTar = DateTime.Now
             };
             _context.tb_BelgeTarihce.Add(tarihce);
@@ -455,6 +456,7 @@ namespace OyemCore.BusinessLayer.Services
                 BelgeKodu = kontrolKodu,
                 Konu = "Durum Güncellemesi",
                 Aciklama = string.IsNullOrEmpty(aciklama) ? $"Kontrol durumu {status} olarak güncellendi." : aciklama,
+                Cihaz = "mobil",
                 KayitTar = DateTime.Now
             };
             _context.tb_BelgeTarihce.Add(tarihce);

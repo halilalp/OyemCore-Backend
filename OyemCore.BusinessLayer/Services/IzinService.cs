@@ -410,6 +410,7 @@ namespace OyemCore.BusinessLayer.Services
                     BelgeKodu = code,
                     Konu = konu + " [Mobil]",
                     Aciklama = aciklama,
+                    Cihaz = "mobil",
                     KayitTar = DateTime.Now
                 };
                 _context.tb_BelgeTarihce.Add(history);

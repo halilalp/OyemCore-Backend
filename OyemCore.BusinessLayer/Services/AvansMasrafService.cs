@@ -28,7 +28,7 @@ namespace OyemCore.BusinessLayer.Services
 
         private void BelgeTarihceKaydet(string belgeNo, string konu, string aciklama)
         {
-            _context.tb_BelgeTarihce.Add(new tb_BelgeTarihce { BelgeKodu = belgeNo, Konu = konu, Aciklama = aciklama, KayitTar = DateTime.Now });
+            _context.tb_BelgeTarihce.Add(new tb_BelgeTarihce { BelgeKodu = belgeNo, Konu = konu, Aciklama = aciklama, Cihaz = "mobil", KayitTar = DateTime.Now });
         }
 
         // Onay zincirini kurar: tb_Hiyerarsi'den amirleri okur, tb_BelgeOnay satırları ekler.

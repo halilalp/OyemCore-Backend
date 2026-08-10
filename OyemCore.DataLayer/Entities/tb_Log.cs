@@ -9,6 +9,7 @@ namespace OyemCore.DataLayer.Entities
         public string SicilNo { get; set; }
         public string Konu { get; set; }
         public string Aciklama { get; set; }
+        public string Cihaz { get; set; }
         public DateTime? KayitTar { get; set; }
     }
 }

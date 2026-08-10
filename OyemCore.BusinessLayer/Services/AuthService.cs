@@ -445,6 +445,7 @@ namespace OyemCore.BusinessLayer.Services
                     SicilNo = sicil,
                     Konu = konu + " [Mobil]",
                     Aciklama = aciklama,
+                    Cihaz = "mobil",
                     KayitTar = DateTime.Now
                 };
 

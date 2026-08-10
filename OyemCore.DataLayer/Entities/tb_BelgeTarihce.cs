@@ -8,6 +8,7 @@ namespace OyemCore.DataLayer.Entities
         public string BelgeKodu { get; set; }
         public string Konu { get; set; }
         public string Aciklama { get; set; }
+        public string Cihaz { get; set; }
         public DateTime? KayitTar { get; set; }
     }
 }
