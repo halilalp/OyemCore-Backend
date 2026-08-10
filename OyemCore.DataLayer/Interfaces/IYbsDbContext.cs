@@ -88,6 +88,8 @@ namespace OyemCore.DataLayer.Interfaces
         DbSet<tb_MagazaAvans> tb_MagazaAvans { get; set; }
         DbSet<tb_MagazaMasraf> tb_MagazaMasraf { get; set; }
         DbSet<tb_MagazaMasrafDetay> tb_MagazaMasrafDetay { get; set; }
+        DbSet<tb_Mail> tb_Mail { get; set; }
+        DbSet<tb_Ayarlar> tb_Ayarlar { get; set; }
 
         DatabaseFacade Database { get; }
 
