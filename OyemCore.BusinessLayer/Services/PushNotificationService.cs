@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Interfaces;
+using OyemCore.DataLayer.Entities;
 
 namespace OyemCore.BusinessLayer.Services
 {
@@ -359,38 +360,92 @@ namespace OyemCore.BusinessLayer.Services
                         .FirstOrDefaultAsync() ?? talep.KayitSicil;
 
                     string tur = talep.TalepTurKodu.ToUpper();
-                    
-                    var managers = await (from u in context.tb_Kullanici
-                                          join p in context.tb_Personel on u.SicilNo equals p.SicilNo
-                                          where p.SirketKodu == companyCode &&
-                                                u.AdminBelgeTur != null &&
-                                                (u.AdminBelgeTur.ToUpper().Contains(tur) || u.AdminBelgeTur.ToUpper().Contains("ADMIN"))
-                                          select u)
-                                         .AsNoTracking()
-                                         .ToListAsync();
+                    List<string> targetSicilNos = new List<string>();
 
-                    if (!managers.Any())
+                    if (talep.KategoriID.HasValue && !string.IsNullOrEmpty(companyCode))
                     {
-                        managers = await context.tb_Kullanici
+                        var talepAyarlar = await context.tb_TalepAyar
                             .AsNoTracking()
-                            .Where(u => u.AdminBelgeTur != null && 
-                                        (u.AdminBelgeTur.ToUpper().Contains(tur) || u.AdminBelgeTur.ToUpper().Contains("ADMIN")))
+                            .Where(ta => ta.KategoriID == talep.KategoriID && ta.SirketKodu == companyCode)
                             .ToListAsync();
+
+                        var yetkililer = talepAyarlar.Where(ta => ta.YoneticiMi == true).ToList();
+                        if (yetkililer.Any())
+                        {
+                            targetSicilNos = yetkililer.Select(ta => ta.SicilNo).Distinct().ToList();
+                        }
+                        else if (talepAyarlar.Any())
+                        {
+                            targetSicilNos = talepAyarlar.Select(ta => ta.SicilNo).Distinct().ToList();
+                        }
                     }
 
-                    string typeLabel = tur == "BAKIM" ? "Bakim" : tur;
+                    if (!targetSicilNos.Any())
+                    {
+                        var managers = await (from u in context.tb_Kullanici
+                                              join p in context.tb_Personel on u.SicilNo equals p.SicilNo
+                                              where p.SirketKodu == companyCode &&
+                                                    u.AdminBelgeTur != null &&
+                                                    (u.AdminBelgeTur.ToUpper().Contains(tur) || u.AdminBelgeTur.ToUpper().Contains("ADMIN"))
+                                              select u.SicilNo)
+                                             .AsNoTracking()
+                                             .ToListAsync();
+
+                        if (!managers.Any())
+                        {
+                            managers = await context.tb_Kullanici
+                                .AsNoTracking()
+                                .Where(u => u.AdminBelgeTur != null && 
+                                            (u.AdminBelgeTur.ToUpper().Contains(tur) || u.AdminBelgeTur.ToUpper().Contains("ADMIN")))
+                                .Select(u => u.SicilNo)
+                                .ToListAsync();
+                        }
+                        targetSicilNos = managers.Distinct().ToList();
+                    }
+
+                    var users = await context.tb_Kullanici
+                        .AsNoTracking()
+                        .Where(u => targetSicilNos.Contains(u.SicilNo))
+                        .Select(u => new { u.SicilNo, u.Eposta })
+                        .ToListAsync();
+
+                    string typeLabel = tur == "BAKIM" ? "Bakım" : (tur == "ERP" ? "ERP" : "IT");
                     string title = $"Yeni {typeLabel} Talebi";
                     string body = $"{requesterName} tarafından yeni bir {typeLabel.ToLower()} talebi ({talep.TalepKodu}) açıldı.";
 
-                    foreach (var manager in managers)
+                    var notificationService = scope.ServiceProvider.GetService<INotificationService>();
+
+                    foreach (var u in users)
                     {
-                        if (manager.SicilNo == talep.KayitSicil) continue; // Skip creator
+                        if (u.SicilNo == talep.KayitSicil) continue; // Skip creator
+
+                        // 1. Push Bildirim Gönder
                         await SendToUserBySicilNoAsync(
-                            manager.SicilNo,
+                            u.SicilNo,
                             title,
                             body,
                             new { type = talep.TalepTurKodu, screen = "TalepScreen", code = talep.TalepKodu, id = talep.TalepID }
                         );
+
+                        // 2. Mail Gönder
+                        if (notificationService != null && !string.IsNullOrEmpty(u.Eposta))
+                        {
+                            string mailKonu = $"{talep.TalepKodu} Nolu Yeni {typeLabel} Talebi Alındı";
+                            string mailIcerik = $@"Merhaba,<br/><br/>
+Yeni bir {typeLabel.ToLower()} talebi oluşturulmuştur ve yetki/sorumluluk alanınızdadır.<br/><br/>
+<b>Talep Kodu:</b> {talep.TalepKodu}<br/>
+<b>Açan Kişi:</b> {requesterName}<br/>
+<b>Konu:</b> {talep.Konu}<br/>
+<b>Açıklama:</b> {talep.Aciklama}<br/><br/>
+İyi çalışmalar dileriz.";
+
+                            _ = notificationService.SendMailAsync(
+                                $"OyemCore {talep.TalepTurKodu}",
+                                mailKonu,
+                                mailIcerik,
+                                u.Eposta
+                            );
+                        }
                     }
                 }
             }
