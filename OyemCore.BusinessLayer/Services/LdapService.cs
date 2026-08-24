@@ -21,14 +21,12 @@ namespace OyemCore.BusinessLayer.Services
         {
             try
             {
-                var ldapServer = _tenantService.GetCurrentLdapServer() ?? "192.168.2.236";
+                var ldapServer = _tenantService.GetCurrentLdapServer() ?? "192.168.2.152";
                 var domain = _tenantService.GetCurrentLdapDomain() ?? "isiktarim";
 
                 _logger.LogInformation($"Attempting LDAP login for user {username} on server {ldapServer}");
 
-                string adUser = $"{domain}\\{username}";
-
-                using (DirectoryEntry ldapConnection = new DirectoryEntry($"LDAP://{ldapServer}", adUser, password, AuthenticationTypes.Secure))
+                using (DirectoryEntry ldapConnection = new DirectoryEntry($"LDAP://{ldapServer}", username, password, AuthenticationTypes.Secure))
                 {
                     object nativeObject = ldapConnection.NativeObject;
 

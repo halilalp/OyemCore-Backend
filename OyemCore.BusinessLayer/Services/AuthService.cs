@@ -418,7 +418,7 @@ namespace OyemCore.BusinessLayer.Services
             {
                 var tenants = _masterDbContext.Tenants
                     .Where(t => t.IsActive)
-                    .Select(t => new { tenantId = t.TenantId, unvan = t.Unvan ?? t.TenantId })
+                    .Select(t => new { tenantId = t.TenantId, unvan = t.Unvan ?? t.TenantId, apiServer = t.ApiServer })
                     .ToList<object>();
 
                 return tenants;
