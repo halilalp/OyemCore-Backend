@@ -15,12 +15,34 @@ namespace OyemCore.BusinessLayer.Services
         private readonly IYbsDbContext _context;
         private readonly IPushNotificationService _pushNotificationService;
         private readonly IBildirimService _bildirim;
+        private readonly INotificationService _notificationService;
 
-        public TalepService(IYbsDbContext context, IPushNotificationService pushNotificationService, IBildirimService bildirim)
+        public TalepService(IYbsDbContext context, IPushNotificationService pushNotificationService, IBildirimService bildirim, INotificationService notificationService)
         {
             _context = context;
             _pushNotificationService = pushNotificationService;
             _bildirim = bildirim;
+            _notificationService = notificationService;
+        }
+
+        private string GetUserEmailBySicil(string sicilNo)
+        {
+            if (string.IsNullOrEmpty(sicilNo)) return null;
+            return _context.tb_Kullanici
+                .AsNoTracking()
+                .Where(u => u.SicilNo == sicilNo && !string.IsNullOrEmpty(u.Eposta))
+                .Select(u => u.Eposta)
+                .FirstOrDefault();
+        }
+
+        private string GetUserPhoneBySicil(string sicilNo)
+        {
+            if (string.IsNullOrEmpty(sicilNo)) return null;
+            return _context.tb_Kullanici
+                .AsNoTracking()
+                .Where(u => u.SicilNo == sicilNo && !string.IsNullOrEmpty(u.Tel1))
+                .Select(u => u.Tel1)
+                .FirstOrDefault();
         }
 
         private bool HasAuthority(string adminBelgeTur, string turKodu)
@@ -28,6 +50,54 @@ namespace OyemCore.BusinessLayer.Services
             if (string.IsNullOrEmpty(adminBelgeTur)) return false;
             var tokens = adminBelgeTur.Split('*', StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim().ToUpper());
             return tokens.Contains("ADMIN") || tokens.Contains("TICKET") || tokens.Contains(turKodu.ToUpper());
+        }
+
+        // Referans: WebPortal WebServiceBakim.cs TalepGelismeVeKapama/AkademiAta tarzı yetki deseni —
+        // sorumlu olmayan bir kullanıcının, talebin kategorisinde (ve mümkünse şirketinde)
+        // tb_TalepAyar.YoneticiMi=true olarak tanımlı olup olmadığını kontrol eder. Sadece BAKIM
+        // talepleri için kullanılır (WebPortal tarafında da bu mantık BAKIM'a özeldi).
+        private bool IsKategoriYoneticisi(tb_Talep t, tb_Kullanici user)
+        {
+            if (t.TalepTurKodu != "BAKIM") return false;
+
+            string sirketKodu = _context.tb_TalepBakim
+                .Where(o => o.TalepKodu == t.TalepKodu)
+                .Select(o => o.SirketKodu)
+                .FirstOrDefault();
+            if (string.IsNullOrEmpty(sirketKodu))
+                sirketKodu = _context.tb_Personel
+                    .Where(o => o.SicilNo == t.KayitSicil)
+                    .Select(o => o.SirketKodu)
+                    .FirstOrDefault();
+
+            return _context.tb_TalepAyar.Any(o => o.KategoriID == t.KategoriID
+                && o.SicilNo == user.SicilNo
+                && o.YoneticiMi == true
+                && (string.IsNullOrEmpty(sirketKodu) || o.SirketKodu == sirketKodu));
+        }
+
+        // Referans: WebPortal WebServiceBakim.cs/WebServiceHelpDesk.cs TalepKaydet — YetkiBelgeTur ve
+        // TLPACIL kontrolleri burada ADMIN muafiyeti KULLANMAZ (referansta da yok, kasıtlı olarak
+        // HasAuthority'den ayrı tutuluyor).
+        private bool HasBelgeTur(string adminBelgeTur, string tur)
+        {
+            if (string.IsNullOrEmpty(adminBelgeTur) || string.IsNullOrEmpty(tur)) return false;
+            var tokens = adminBelgeTur.Split('*', StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim().ToUpper());
+            return tokens.Contains(tur.Trim().ToUpper());
+        }
+
+        // Liste ekranı için: her talebin gelişme (tb_TalepGelisme) ve ekli dosya (DosyaUrl'i dolu gelişme) adedi.
+        // N+1 olmasın diye tek sorguda gruplanır.
+        private Dictionary<string, (int Gelisme, int Dosya)> GelismeDosyaSayaclari(IEnumerable<string> talepKodlari)
+        {
+            var kodlar = talepKodlari.Where(k => !string.IsNullOrEmpty(k)).Distinct().ToList();
+            if (kodlar.Count == 0) return new Dictionary<string, (int, int)>();
+            return _context.tb_TalepGelisme.AsNoTracking()
+                .Where(g => kodlar.Contains(g.TalepKodu))
+                .GroupBy(g => g.TalepKodu)
+                .Select(g => new { Kodu = g.Key, Gelisme = g.Count(), Dosya = g.Count(x => x.DosyaUrl != null && x.DosyaUrl != "") })
+                .ToList()
+                .ToDictionary(x => x.Kodu, x => (x.Gelisme, x.Dosya));
         }
 
         public IEnumerable<object> GetRequests(int kullaniciID, string turKodu)
@@ -66,6 +136,7 @@ namespace OyemCore.BusinessLayer.Services
                 }
 
                 var list = queryBakim.OrderByDescending(x => x.t.KayitTar).ToList();
+                var sayac = GelismeDosyaSayaclari(list.Select(x => x.t.TalepKodu));
 
                 return list.Select(o => new
                 {
@@ -94,7 +165,9 @@ namespace OyemCore.BusinessLayer.Services
                     MakineAdi = o.tm != null ? o.tm.MakineAdi : null,
                     UretimDurusu = o.tb != null ? o.tb.UretimDurusu : null,
                     TalepPuan = o.t.TalepPuan,
-                    PuanRenk = ClsYardim.BakimPuanRenk(o.t.TalepPuan)
+                    PuanRenk = ClsYardim.BakimPuanRenk(o.t.TalepPuan),
+                    GelismeAdet = (o.t.TalepKodu != null && sayac.ContainsKey(o.t.TalepKodu)) ? sayac[o.t.TalepKodu].Gelisme : 0,
+                    DosyaAdet = ((o.t.TalepKodu != null && sayac.ContainsKey(o.t.TalepKodu)) ? sayac[o.t.TalepKodu].Dosya : 0) + (!string.IsNullOrEmpty(o.t.DosyaUrl) ? 1 : 0)
                 }).ToList();
             }
             else
@@ -121,6 +194,7 @@ namespace OyemCore.BusinessLayer.Services
                 }
 
                 var list = queryGeneric.OrderByDescending(x => x.t.KayitTar).ToList();
+                var sayac = GelismeDosyaSayaclari(list.Select(x => x.t.TalepKodu));
 
                 return list.Select(o => new
                 {
@@ -149,7 +223,9 @@ namespace OyemCore.BusinessLayer.Services
                     MakineAdi = (string)null,
                     UretimDurusu = (string)null,
                     TalepPuan = (int?)null,
-                    PuanRenk = (string)null
+                    PuanRenk = (string)null,
+                    GelismeAdet = (o.t.TalepKodu != null && sayac.ContainsKey(o.t.TalepKodu)) ? sayac[o.t.TalepKodu].Gelisme : 0,
+                    DosyaAdet = ((o.t.TalepKodu != null && sayac.ContainsKey(o.t.TalepKodu)) ? sayac[o.t.TalepKodu].Dosya : 0) + (!string.IsNullOrEmpty(o.t.DosyaUrl) ? 1 : 0)
                 }).ToList();
             }
         }
@@ -226,6 +302,8 @@ namespace OyemCore.BusinessLayer.Services
                     girisTur = "SAHIP";
                 else if (user.Eposta == item.t.SorumluEposta)
                     girisTur = "SORUMLU";
+                else if (IsKategoriYoneticisi(item.t, user))
+                    girisTur = "YONETICI";
                 else if (_context.tb_TalepAmir.Any(o => o.TalepKodu == code && o.AmirSicil == user.SicilNo && o.Durum == null))
                     girisTur = "ONAY";
                 else if (HasAuthority(user.AdminBelgeTur, item.t.TalepTurKodu))
@@ -409,10 +487,12 @@ namespace OyemCore.BusinessLayer.Services
 
                     if (request.TalepID == 0)
                     {
-                        int totalCount = _context.tb_Talep.Count(t => t.TalepTurKodu == request.TalepTurKodu);
-                        string code = $"{request.TalepTurKodu}-{DateTime.Now:yyyyMMdd}-{totalCount + 1:000}";
+                        // Referans (WebServiceHelpDesk) sırası: önce talep insert edilip TalepID alınır,
+                        // sonra TalepKodu = TalepTurKodu-yyyyMM-TalepID set edilir. Bu nedenle kod, ilk
+                        // SaveChanges'ten SONRA (TalepID bilindikten sonra) üretilir.
+                        string code = null;
 
-                        request.TalepKodu = code;
+                        request.TalepKodu = null;
                         request.KayitSicil = user.SicilNo;
                         request.KayitEposta = user.Eposta;
                         request.KayitTar = DateTime.Now;
@@ -439,7 +519,7 @@ namespace OyemCore.BusinessLayer.Services
 
                             if (oncekiTalep != null && oncekiTalep.KayitTar.HasValue)
                             {
-                                request.MtbfAralikSure = (int)(request.KayitTar.Value - oncekiTalep.KayitTar.Value).TotalMinutes;
+                                request.MtbfAralikSure = SureHesaplaBakim(oncekiTalep.KayitTar.Value, request.KayitTar.Value);
                             }
                             else
                             {
@@ -448,6 +528,11 @@ namespace OyemCore.BusinessLayer.Services
                         }
 
                         _context.tb_Talep.Add(request);
+                        _context.SaveChanges();
+
+                        // TalepID artık atandı → referans formatında kodu üret ve kaydet.
+                        code = $"{request.TalepTurKodu}-{DateTime.Now:yyyyMM}-{request.TalepID}";
+                        request.TalepKodu = code;
                         _context.SaveChanges();
 
                         if (request.TalepTurKodu == "BAKIM" && bakim != null)
@@ -459,6 +544,24 @@ namespace OyemCore.BusinessLayer.Services
 
                         BelgeTarihceKaydet(code, "Talep Oluşturuldu", $"Yeni talep kaydı açıldı. (Yapan: {user.AdSoyad})");
                         _ = _pushNotificationService.NotifyNewTalepAsync(request.TalepID);
+
+                        // Mail gönderimi (Talebi Açan Kişiye)
+                        if (!string.IsNullOrEmpty(user.Eposta))
+                        {
+                            _ = _notificationService.SendMailAsync($"OyemCore {request.TalepTurKodu}", $"{code} Nolu Talebiniz Alındı", 
+                                $"Merhaba {user.AdSoyad},<br/><br/>{code} nolu yardım masası talebiniz başarıyla oluşturulmuştur.<br/><b>Konu:</b> {request.Konu}<br/><b>Açıklama:</b> {request.Aciklama}<br/><br/>İyi çalışmalar dileriz.", user.Eposta);
+                        }
+
+                        // Mail gönderimi (Sorumlu Atandıysa Sorumluya)
+                        if (!string.IsNullOrEmpty(request.SorumluSicil))
+                        {
+                            var sorumluEposta = GetUserEmailBySicil(request.SorumluSicil);
+                            if (!string.IsNullOrEmpty(sorumluEposta))
+                            {
+                                _ = _notificationService.SendMailAsync($"OyemCore {request.TalepTurKodu}", $"{code} Nolu Talep Size Atandı", 
+                                    $"Merhaba,<br/><br/>{code} nolu talep üzerinize atanmıştır.<br/><b>Açan:</b> {user.AdSoyad}<br/><b>Konu:</b> {request.Konu}<br/><b>Açıklama:</b> {request.Aciklama}<br/><br/>İyi çalışmalar dileriz.", sorumluEposta);
+                            }
+                        }
                     }
                     else
                     {
@@ -526,33 +629,43 @@ namespace OyemCore.BusinessLayer.Services
             catch { }
         }
 
-        public IEnumerable<Personel> GetPersonels(string tur)
+        public IEnumerable<Personel> GetPersonels(string tur, int? kategoriId = null, string sirketKodu = null)
         {
-            var query = _context.tb_Kullanici.AsNoTracking();
-            List<string> users;
+            // Sorumlular, referansta (WebServiceHelpDesk.PersonelGetirTur / PersonelGetirKat) AdminBelgeTur'dan
+            // DEĞİL, tb_TalepAyar (talep kategori sorumlu tanımları: KategoriID + SicilNo + SirketKodu) tablosundan gelir.
+            List<string> sicils;
 
-            if (!string.IsNullOrEmpty(tur))
+            if (kategoriId.HasValue && kategoriId.Value > 0)
             {
-                string turUpper = tur.ToUpper();
-                users = query
-                    .Where(k => k.AdminBelgeTur != null && (k.AdminBelgeTur.ToUpper().Contains(turUpper) || k.AdminBelgeTur.ToUpper().Contains("ADMIN")))
-                    .Select(k => k.SicilNo)
-                    .ToList();
+                // Belirli kategori sorumluları (+ opsiyonel şirket) — referans PersonelGetirKat
+                var q = _context.tb_TalepAyar.AsNoTracking()
+                    .Where(a => a.KategoriID == kategoriId.Value);
+                if (!string.IsNullOrEmpty(sirketKodu))
+                {
+                    q = q.Where(a => a.SirketKodu == sirketKodu);
+                }
+                sicils = q.Select(a => a.SicilNo).Distinct().ToList();
             }
             else
             {
-                users = query
-                    .Where(k => k.AdminBelgeTur != null && (k.AdminBelgeTur.ToUpper().Contains("TICKET") || 
-                                                           k.AdminBelgeTur.ToUpper().Contains("ADMIN") ||
-                                                           k.AdminBelgeTur.ToUpper().Contains("IT") ||
-                                                           k.AdminBelgeTur.ToUpper().Contains("ERP")))
-                    .Select(k => k.SicilNo)
-                    .ToList();
+                // Tür bazlı — referans PersonelGetirTur: tb_TalepAyar x tb_TalepKategori, TalepTurKodu filtresi
+                string turUpper = (tur ?? "").ToUpper();
+                var q = from a in _context.tb_TalepAyar.AsNoTracking()
+                        join tk in _context.tb_TalepKategori.AsNoTracking() on a.KategoriID equals tk.TalepKategoriID
+                        where string.IsNullOrEmpty(turUpper)
+                                ? (tk.TalepTurKodu == "IT" || tk.TalepTurKodu == "ERP")
+                                : tk.TalepTurKodu == turUpper
+                        select a;
+                if (!string.IsNullOrEmpty(sirketKodu))
+                {
+                    q = q.Where(a => a.SirketKodu == sirketKodu);
+                }
+                sicils = q.Select(a => a.SicilNo).Distinct().ToList();
             }
 
             return _context.tb_Personel
                 .AsNoTracking()
-                .Where(p => p.Durum == true && users.Contains(p.SicilNo))
+                .Where(p => p.Durum == true && sicils.Contains(p.SicilNo))
                 .OrderBy(p => p.AdSoyad)
                 .Select(p => new Personel
                 {
@@ -738,6 +851,26 @@ namespace OyemCore.BusinessLayer.Services
                 );
             }
 
+            // Mail gönderimi (Talebi açan kişiye ve sorumluya)
+            string onayDurumu = approve ? "onaylanmıştır" : "reddedilmiştir";
+            string subject = approve ? "Talep Onaylandı" : "Talep Reddedildi";
+            string body = $"Merhaba,<br/><br/>{t.TalepKodu} takip kodlu talebinize amir {user.AdSoyad} tarafından <b>{(approve ? "ONAY" : "RET")}</b> yanıtı verilmiştir.<br/><b>Açıklama:</b> {aciklamaMsg}<br/><br/>İyi çalışmalar dileriz.";
+
+            var ownerEmail = GetUserEmailBySicil(t.KayitSicil);
+            if (!string.IsNullOrEmpty(ownerEmail))
+            {
+                _ = _notificationService.SendMailAsync($"OyemCore {t.TalepTurKodu}", $"{t.TalepKodu} Nolu Talep {subject}", body, ownerEmail);
+            }
+
+            if (!string.IsNullOrEmpty(t.SorumluSicil) && t.SorumluSicil != t.KayitSicil)
+            {
+                var sorumluEmail = GetUserEmailBySicil(t.SorumluSicil);
+                if (!string.IsNullOrEmpty(sorumluEmail))
+                {
+                    _ = _notificationService.SendMailAsync($"OyemCore {t.TalepTurKodu}", $"{t.TalepKodu} Nolu Talep {subject}", body, sorumluEmail);
+                }
+            }
+
             return true;
         }
 
@@ -800,7 +933,7 @@ namespace OyemCore.BusinessLayer.Services
             if (t == null) return false;
             if (t.Durum == true) return false;
 
-            if (t.SorumluSicil != user.SicilNo) return false;
+            if (t.SorumluSicil != user.SicilNo && !IsKategoriYoneticisi(t, user)) return false;
 
             var helper = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == helperSicil);
             if (helper == null) return false;
@@ -845,7 +978,7 @@ namespace OyemCore.BusinessLayer.Services
             if (t == null) return false;
             if (t.Durum == true) return false;
 
-            if (t.SorumluSicil != user.SicilNo) return false;
+            if (t.SorumluSicil != user.SicilNo && !IsKategoriYoneticisi(t, user)) return false;
 
             var tb = _context.tb_TalepBilgi.FirstOrDefault(b => b.TalepKodu == t.TalepKodu && b.BilgiSicil == helperSicil);
             if (tb == null) return false;
@@ -1242,6 +1375,20 @@ namespace OyemCore.BusinessLayer.Services
                     TalepSureHesapla(talepKodu);
                     _context.SaveChanges();
 
+                    // Referans: WebPortal WebServiceBakim.TalepKontrolKaydet — form dolduruldu/kapatıldı tarihçe kaydı.
+                    BelgeTarihceKaydet(t.TalepKodu, "Talep Kontrol Formu Dolduruldu ve Kapatıldı.", $"İşlem Yapan: {user.AdSoyad}");
+
+                    // Temizlik formu (son onay) sonrası talep sorumlusuna bildir (onaylayan hariç).
+                    if (!string.IsNullOrEmpty(t.SorumluSicil) && t.SorumluSicil != user.SicilNo)
+                    {
+                        _ = _pushNotificationService.SendToUserBySicilNoAsync(
+                            t.SorumluSicil,
+                            "Bakım Talebi Form Onaylandı",
+                            $"{t.TalepKodu} talebinin kapanış formu {user.AdSoyad} tarafından onaylandı.",
+                            new { type = "BAKIM", screen = "TalepScreen", code = t.TalepKodu, id = t.TalepID }
+                        );
+                    }
+
                     transaction.Commit();
                     return true;
                 }
@@ -1323,13 +1470,13 @@ namespace OyemCore.BusinessLayer.Services
             return true;
         }
 
-        public bool UpdateRequestStatus(int kullaniciID, int talepID, string status)
+        public (bool Success, bool PendingApproval, string PendingApprovalAdSoyad) UpdateRequestStatus(int kullaniciID, int talepID, string status)
         {
             var user = _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == kullaniciID);
-            if (user == null) return false;
+            if (user == null) return (false, false, null);
 
             var t = _context.tb_Talep.FirstOrDefault(r => r.TalepID == talepID);
-            if (t == null) return false;
+            if (t == null) return (false, false, null);
 
             // Istemci "KAPATILDI" gonderiyor. Onceki karsilastirma "Kapali" bekledigi icin
             // kapatma hic calismiyor, talep sessizce "yeniden acildi" dalina dusuyordu.
@@ -1340,6 +1487,9 @@ namespace OyemCore.BusinessLayer.Services
 
             if (!kapatiliyor && !yenidenAciliyor)
                 throw new InvalidOperationException($"Geçersiz talep durumu: {status}");
+
+            bool pendingApproval = false;
+            string pendingAdSoyad = null;
 
             if (kapatiliyor)
             {
@@ -1356,8 +1506,18 @@ namespace OyemCore.BusinessLayer.Services
                 if (string.IsNullOrEmpty(t.SorumluSicil))
                     throw new InvalidOperationException("Sorumlu atanmamış bir talep kapatılamaz.");
 
+                // Referans: WebPortal WebServiceBakim.TalepGelismeVeKapama — BAKIM talepleri için,
+                // sorumlu değilse, o talep kategorisinde (ve şirketinde) tb_TalepAyar.YoneticiMi=true
+                // olan bir kategori yöneticisi de kapatabilir. Diğer talep türleri (IT vb.) için
+                // önceki davranış (sadece sorumlu) korunur.
+                bool kapatanYonetici = false;
                 if (t.SorumluSicil != user.SicilNo)
-                    throw new InvalidOperationException("Talebi yalnızca sorumlu kişi kapatabilir.");
+                {
+                    if (!IsKategoriYoneticisi(t, user))
+                        throw new InvalidOperationException("Talebi yalnızca sorumlu kişi kapatabilir.");
+
+                    kapatanYonetici = true;
+                }
 
                 // Acik is emri varsa kapatilamaz (tum turler icin gecerli)
                 var acikIsEmri = _context.tb_TalepIsEmri.Any(i => i.TalepKodu == t.TalepKodu && i.KapanmaTar == null);
@@ -1376,14 +1536,19 @@ namespace OyemCore.BusinessLayer.Services
                         KayitTar = DateTime.Now
                     };
                     _context.tb_TalepAmir.Add(formOnayi);
-                    BelgeTarihceKaydet(t.TalepKodu, "Form Onayına Gönderildi", $"Talep sahibi {t.KayitSicil} form onayı bekleniyor.");
+                    BelgeTarihceKaydet(t.TalepKodu, "Form Onayına Gönderildi" + (kapatanYonetici ? " (Talep Yöneticisi)" : ""), $"Talep sahibi {t.KayitSicil} form onayı bekleniyor.");
 
-                    // Talep sahibine "onayınıza gönderildi" bildirimi (zil) + push. Mobil
-                    // akışta bu tetiklenmiyordu; kullanıcıya "tamamlandı" gibi görünüyordu.
+                    // Client'a "talep tamamlandı" değil, gerçek durumu (kime onaya gittiği)
+                    // göstermesi için — referans: WebPortal "kapatılması için onaya gönderildi".
+                    pendingApproval = true;
+                    pendingAdSoyad = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == t.KayitSicil)?.AdSoyad ?? t.KayitSicil;
+
+                    // Talep sahibine "onayınıza gönderildi" bildirimi (zil). Push + mail,
+                    // aşağıdaki genel "talep sahibine durum bildirimi" bloğunda tek yerden
+                    // gönderiliyor (burada ayrıca göndermek aynı olay için çift push'a yol açıyordu).
                     _bildirim.AddNotification(t.KayitSicil, "Bakım Talebi Onayınızda",
                         $"'{t.Konu}' konulu talep ({t.TalepKodu}) form onayınıza gönderildi.",
                         "", "Bakim", t.TalepID.ToString(), kullaniciID);
-                    _ = _pushNotificationService.NotifyTalepOnayaGonderildiAsync(t.TalepID, t.KayitSicil);
                 }
                 else
                 {
@@ -1401,6 +1566,14 @@ namespace OyemCore.BusinessLayer.Services
                 t.KapanmaTar = null;
                 t.MttrTamamSure = null;
                 BelgeTarihceKaydet(t.TalepKodu, "Talep Yeniden Açıldı", $"Talep {user.AdSoyad} tarafından yeniden açıldı.");
+
+                // Mail gönderimi (Yeniden Açıldı)
+                var ownerEmail = GetUserEmailBySicil(t.KayitSicil);
+                if (!string.IsNullOrEmpty(ownerEmail))
+                {
+                    _ = _notificationService.SendMailAsync($"OyemCore {t.TalepTurKodu}", $"{t.TalepKodu} Nolu Talebiniz Yeniden Açıldı", 
+                        $"Merhaba,<br/><br/>{t.TalepKodu} nolu talebiniz yeniden açılmıştır.<br/><b>İşlem Yapan:</b> {user.AdSoyad}<br/><br/>İyi çalışmalar dileriz.", ownerEmail);
+                }
             }
 
             _context.SaveChanges();
@@ -1417,8 +1590,39 @@ namespace OyemCore.BusinessLayer.Services
                     mesaj,
                     new { type = t.TalepTurKodu, screen = "TalepScreen", code = t.TalepKodu, id = t.TalepID }
                 );
+
+                // Mail gönderimi (Talep Sahibine)
+                var ownerEmail = GetUserEmailBySicil(t.KayitSicil);
+                string smsIcerik;
+                if (t.TalepTurKodu == "BAKIM")
+                {
+                    smsIcerik = $"{t.TalepKodu} nolu bakım talebiniz tamamlanmış ve form onayınıza sunulmuştur.";
+                    if (!string.IsNullOrEmpty(ownerEmail))
+                    {
+                        _ = _notificationService.SendMailAsync("OyemCore Bakım", $"{t.TalepKodu} Bakım Talebi Form Onayınızda",
+                            $"Merhaba,<br/><br/>{smsIcerik}<br/><b>Kapayan Sorumlu:</b> {user.AdSoyad}<br/><br/>İyi çalışmalar dileriz.", ownerEmail);
+                    }
+                }
+                else
+                {
+                    smsIcerik = $"{t.TalepKodu} nolu talebiniz kapatılmıştır.";
+                    if (!string.IsNullOrEmpty(ownerEmail))
+                    {
+                        _ = _notificationService.SendMailAsync($"OyemCore {t.TalepTurKodu}", $"{t.TalepKodu} Nolu Talebiniz Kapatıldı",
+                            $"Merhaba,<br/><br/>{smsIcerik}<br/><b>Kapayan Sorumlu:</b> {user.AdSoyad}<br/><br/>İyi çalışmalar dileriz.", ownerEmail);
+                    }
+                }
+
+                // SMS gönderimi (Talep Sahibine) — tb_Sms kuyruğuna kayıt atar, mevcut
+                // Windows Servis gönderir (referans: WebPortal ClsMail.SmsGonder ile aynı desen).
+                var ownerPhone = GetUserPhoneBySicil(t.KayitSicil);
+                if (!string.IsNullOrEmpty(ownerPhone))
+                {
+                    var ownerAdSoyad = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == t.KayitSicil)?.AdSoyad ?? t.KayitSicil;
+                    _ = _notificationService.SendSmsAsync($"OyemCore {t.TalepTurKodu}", $"{t.TalepKodu} Talebi Güncellendi", smsIcerik, ownerPhone, ownerAdSoyad);
+                }
             }
-            return true;
+            return (true, pendingApproval, pendingAdSoyad);
         }
 
         public bool AssignRequest(int kullaniciID, int talepID, string sicilNo)
@@ -1448,6 +1652,28 @@ namespace OyemCore.BusinessLayer.Services
                     $"'{request.Konu}' konulu talebe ({request.TalepKodu}) sorumlu olarak atandınız.",
                     new { type = request.TalepTurKodu, screen = "TalepScreen", code = request.TalepKodu, id = request.TalepID }
                 );
+            }
+
+            // Talep sahibine de bildir (atayan ya da sorumlu değilse). Referans: atama → sorumlu + talep sahibi.
+            if (!string.IsNullOrEmpty(request.KayitSicil) && request.KayitSicil != user.SicilNo && request.KayitSicil != sicilNo)
+            {
+                _ = _pushNotificationService.SendToUserBySicilNoAsync(
+                    request.KayitSicil,
+                    $"{(request.TalepTurKodu == "BAKIM" ? "Bakım" : request.TalepTurKodu)} Talebinize Sorumlu Atandı",
+                    $"'{request.Konu}' konulu talebinize ({request.TalepKodu}) sorumlu olarak {name} atandı.",
+                    new { type = request.TalepTurKodu, screen = "TalepScreen", code = request.TalepKodu, id = request.TalepID }
+                );
+            }
+
+            // Mail gönderimi (Sorumlu Atandıysa Sorumluya)
+            if (!string.IsNullOrEmpty(sicilNo))
+            {
+                var sorumluEposta = GetUserEmailBySicil(sicilNo);
+                if (!string.IsNullOrEmpty(sorumluEposta))
+                {
+                    _ = _notificationService.SendMailAsync($"OyemCore {request.TalepTurKodu}", $"{request.TalepKodu} Nolu Talep Size Atandı", 
+                        $"Merhaba,<br/><br/>{request.TalepKodu} nolu talep üzerinize atanmıştır.<br/><b>Atayan:</b> {user.AdSoyad}<br/><b>Konu:</b> {request.Konu}<br/><b>Açıklama:</b> {request.Aciklama}<br/><br/>İyi çalışmalar dileriz.", sorumluEposta);
+                }
             }
 
             return true;
@@ -1490,6 +1716,14 @@ namespace OyemCore.BusinessLayer.Services
                     $"{user.AdSoyad}, {request.TalepKodu} talebine bir gelişme ekledi.",
                     new { type = request.TalepTurKodu, screen = "TalepScreen", code = request.TalepKodu, id = request.TalepID }
                 );
+
+                // Mail gönderimi
+                var hedefEposta = GetUserEmailBySicil(hedef);
+                if (!string.IsNullOrEmpty(hedefEposta))
+                {
+                    _ = _notificationService.SendMailAsync($"OyemCore {request.TalepTurKodu}", $"{request.TalepKodu} Talebine Gelişme Notu Eklendi", 
+                        $"Merhaba,<br/><br/>{request.TalepKodu} takip kodlu talebe yeni bir gelişme notu eklenmiştir.<br/><b>Ekleyen:</b> {user.AdSoyad}<br/><b>Gelişme Notu:</b> {aciklama}<br/><br/>İyi çalışmalar dileriz.", hedefEposta);
+                }
             }
 
             return true;

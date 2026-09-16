@@ -18,13 +18,25 @@ namespace OyemCore.BusinessLayer.Services
         private readonly ILogger<TicketService> _logger;
         private readonly IConfiguration _configuration;
         private readonly IPushNotificationService _pushNotificationService;
+        private readonly INotificationService _notificationService;
 
-        public TicketService(IYbsDbContext context, ILogger<TicketService> logger, IConfiguration configuration, IPushNotificationService pushNotificationService)
+        public TicketService(IYbsDbContext context, ILogger<TicketService> logger, IConfiguration configuration, IPushNotificationService pushNotificationService, INotificationService notificationService)
         {
             _context = context;
             _logger = logger;
             _configuration = configuration;
             _pushNotificationService = pushNotificationService;
+            _notificationService = notificationService;
+        }
+
+        private string GetUserEmailBySicil(string sicilNo)
+        {
+            if (string.IsNullOrEmpty(sicilNo)) return null;
+            return _context.tb_Kullanici
+                .AsNoTracking()
+                .Where(u => u.SicilNo == sicilNo && !string.IsNullOrEmpty(u.Eposta))
+                .Select(u => u.Eposta)
+                .FirstOrDefault();
         }
 
         private bool HasTicketAuthority(string adminBelgeTur)
@@ -219,6 +231,24 @@ namespace OyemCore.BusinessLayer.Services
 
                 BelgeTarihceKaydet(ticket.TakipKodu, "Ticket Olusturuldu", $"Yeni kayit açıldı. (Yapan: {usr.AdSoyad})");
                 _ = _pushNotificationService.NotifyNewTicketAsync(ticket.ID);
+
+                // Mail gönderimi (Açan kişi)
+                if (!string.IsNullOrEmpty(usr.Eposta))
+                {
+                    _ = _notificationService.SendMailAsync("OyemCore Ticket", $"{ticket.TakipKodu} Nolu Talebiniz Alındı", 
+                        $"Merhaba {usr.AdSoyad},<br/><br/>{ticket.TakipKodu} takip kodlu talebiniz başarıyla oluşturulmuştur.<br/><b>Başlık:</b> {ticket.Baslik}<br/><b>Açıklama:</b> {ticket.Aciklama}<br/><b>Öncelik:</b> {ticket.Oncelik}<br/><br/>İyi çalışmalar dileriz.", usr.Eposta);
+                }
+
+                // Sorumlu atandıysa sorumluya da mail at
+                if (!string.IsNullOrEmpty(ticket.SorumluSicilNo))
+                {
+                    var sorumluEposta = GetUserEmailBySicil(ticket.SorumluSicilNo);
+                    if (!string.IsNullOrEmpty(sorumluEposta))
+                    {
+                        _ = _notificationService.SendMailAsync("OyemCore Ticket", $"{ticket.TakipKodu} Nolu Talep Size Atandı", 
+                            $"Merhaba,<br/><br/>{ticket.TakipKodu} takip kodlu talep üzerinize atanmıştır.<br/><b>Açan:</b> {usr.AdSoyad}<br/><b>Başlık:</b> {ticket.Baslik}<br/><b>Açıklama:</b> {ticket.Aciklama}<br/><br/>İyi çalışmalar dileriz.", sorumluEposta);
+                    }
+                }
             }
             else
             {
@@ -242,6 +272,13 @@ namespace OyemCore.BusinessLayer.Services
                 if (eskiDurum != ticket.SurecDurumu)
                 {
                     BelgeTarihceKaydet(existing.TakipKodu, "Durum Güncellendi", $"Durum '{ticket.SurecDurumu}' olarak güncellendi. (Yapan: {usr.AdSoyad})");
+                    
+                    var ownerEposta = GetUserEmailBySicil(existing.KayitSicilNo);
+                    if (!string.IsNullOrEmpty(ownerEposta))
+                    {
+                        _ = _notificationService.SendMailAsync("OyemCore Ticket", $"{existing.TakipKodu} Nolu Talebinizin Durumu Güncellendi", 
+                            $"Merhaba,<br/><br/>{existing.TakipKodu} takip kodlu talebinizin durumu <b>{ticket.SurecDurumu}</b> olarak güncellenmiştir.<br/><b>Güncelleyen:</b> {usr.AdSoyad}<br/><br/>İyi çalışmalar dileriz.", ownerEposta);
+                    }
                 }
             }
 
@@ -271,6 +308,14 @@ namespace OyemCore.BusinessLayer.Services
                 BelgeTarihceKaydet(t.TakipKodu, "Süre? Degisikligi", $"'{yeniDurum}' asamasina geçildi. (Yapan: {usr.AdSoyad})");
                 _ = _pushNotificationService.NotifyTicketStatusChangedAsync(t.ID, "", yeniDurum, usr.KullaniciID);
 
+                // Mail gönderimi (Talebi açan kişiye)
+                var ownerEposta = GetUserEmailBySicil(t.KayitSicilNo);
+                if (!string.IsNullOrEmpty(ownerEposta))
+                {
+                    _ = _notificationService.SendMailAsync("OyemCore Ticket", $"{t.TakipKodu} Nolu Talebinizin Durumu Güncellendi", 
+                        $"Merhaba,<br/><br/>{t.TakipKodu} takip kodlu talebinizin durumu <b>{yeniDurum}</b> olarak güncellenmiştir.<br/><b>Güncelleyen:</b> {usr.AdSoyad}<br/><br/>İyi çalışmalar dileriz.", ownerEposta);
+                }
+
                 return true;
             }
             return false;
@@ -297,6 +342,14 @@ namespace OyemCore.BusinessLayer.Services
 
                 BelgeTarihceKaydet(t.TakipKodu, "Atama Islemi", $"Sorumlu: {adSoyad} (Atayan: {usr.AdSoyad})");
                 _ = _pushNotificationService.NotifyTicketSorumluAtandiAsync(t.ID);
+
+                // Mail gönderimi (Yeni atanan sorumluya)
+                var sorumluEposta = GetUserEmailBySicil(sicilNo);
+                if (!string.IsNullOrEmpty(sorumluEposta))
+                {
+                    _ = _notificationService.SendMailAsync("OyemCore Ticket", $"{t.TakipKodu} Nolu Talep Size Atandı", 
+                        $"Merhaba,<br/><br/>{t.TakipKodu} takip kodlu talep üzerinize atanmıştır.<br/><b>Atayan:</b> {usr.AdSoyad}<br/><b>Başlık:</b> {t.Baslik}<br/><b>Açıklama:</b> {t.Aciklama}<br/><br/>İyi çalışmalar dileriz.", sorumluEposta);
+                }
 
                 return true;
             }
@@ -459,6 +512,28 @@ namespace OyemCore.BusinessLayer.Services
 
                 BelgeTarihceKaydet(t.TakipKodu, "Yeni Yorum", $"Ticketa yeni gelisme eklendi. (Yapan: {usr.AdSoyad})");
                 _ = _pushNotificationService.NotifyTicketGelismeAsync(t.ID, usr.KullaniciID, aciklama);
+
+                // Mail gönderimi (Açan kişi yorumu yazan değilse ona mail at)
+                if (t.KayitSicilNo != usr.SicilNo)
+                {
+                    var ownerEposta = GetUserEmailBySicil(t.KayitSicilNo);
+                    if (!string.IsNullOrEmpty(ownerEposta))
+                    {
+                        _ = _notificationService.SendMailAsync("OyemCore Ticket", $"{t.TakipKodu} Nolu Talebinize Yeni Yorum Eklendi", 
+                            $"Merhaba,<br/><br/>{t.TakipKodu} takip kodlu talebinize yeni bir yorum eklenmiştir.<br/><b>Ekleyen:</b> {usr.AdSoyad}<br/><b>Yorum:</b> {aciklama}<br/><br/>İyi çalışmalar dileriz.", ownerEposta);
+                    }
+                }
+
+                // Sorumlu yorumu yazan değilse sorumluya da mail at
+                if (!string.IsNullOrEmpty(t.SorumluSicilNo) && t.SorumluSicilNo != usr.SicilNo)
+                {
+                    var sorumluEposta = GetUserEmailBySicil(t.SorumluSicilNo);
+                    if (!string.IsNullOrEmpty(sorumluEposta))
+                    {
+                        _ = _notificationService.SendMailAsync("OyemCore Ticket", $"{t.TakipKodu} Nolu Talebe Yeni Yorum Eklendi", 
+                            $"Merhaba,<br/><br/>Sorumlusu olduğunuz {t.TakipKodu} takip kodlu talebe yeni bir yorum eklenmiştir.<br/><b>Ekleyen:</b> {usr.AdSoyad}<br/><b>Yorum:</b> {aciklama}<br/><br/>İyi çalışmalar dileriz.", sorumluEposta);
+                    }
+                }
 
                 return true;
             }

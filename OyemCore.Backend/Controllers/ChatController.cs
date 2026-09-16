@@ -82,6 +82,16 @@ namespace OyemCore.Backend.Controllers
         public IActionResult GetTotalUnreadCount()
             => Ok(new { success = true, totalUnread = _chat.GetTotalUnreadCount(GetCurrentUserId()) });
 
+        // Sohbeti temizle (tek taraflı / soft-delete).
+        [HttpPost("clear-conversation")]
+        public IActionResult ClearConversation([FromBody] TargetRequest req)
+            => Ok(_chat.ClearConversation(GetCurrentUserId(), req?.TargetSicilNo));
+
+        // Grubu sil / kapat (kurucu kapatır, üye kendi listesinden siler).
+        [HttpDelete("group/{groupCode}")]
+        public IActionResult DeleteGroup(string groupCode)
+            => Ok(_chat.DeleteGroup(GetCurrentUserId(), groupCode));
+
         public class TargetRequest { public string TargetSicilNo { get; set; } }
         public class SendMessageRequest
         {

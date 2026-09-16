@@ -18,15 +18,66 @@ namespace OyemCore.BusinessLayer.Services
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly HttpClient _httpClient;
         private readonly ILogger<PushNotificationService> _logger;
+        private readonly IFcmVoipPushService _fcmVoip;
+        private readonly IApnsVoipPushService _apnsVoip;
 
-        public PushNotificationService(IServiceScopeFactory scopeFactory, HttpClient httpClient, ILogger<PushNotificationService> logger)
+        public PushNotificationService(IServiceScopeFactory scopeFactory, HttpClient httpClient, ILogger<PushNotificationService> logger, IFcmVoipPushService fcmVoip, IApnsVoipPushService apnsVoip)
         {
             _scopeFactory = scopeFactory;
             _httpClient = httpClient;
             _logger = logger;
+            _fcmVoip = fcmVoip;
+            _apnsVoip = apnsVoip;
         }
 
-        public async Task SendToUserBySicilNoAsync(string sicilNo, string title, string body, object data = null)
+        public async Task SendCallWakeAsync(string sicilNo, string callerSicilNo, string callerName, string roomUrl, string callType, string callerImage)
+        {
+            if (string.IsNullOrEmpty(sicilNo)) return;
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    List<(string PushToken, string DeviceType)> devices;
+                    try
+                    {
+                        devices = await context.tb_UserDevices
+                            .AsNoTracking()
+                            .Where(d => d.SicilNo == sicilNo &&
+                                        (d.DeviceType == "FcmVoip" || d.DeviceType == "ApnsVoipProduction" || d.DeviceType == "ApnsVoipSandbox"))
+                            .Select(d => new { d.PushToken, d.DeviceType })
+                            .ToListAsync()
+                            .ContinueWith(t => t.Result.Select(d => (d.PushToken, d.DeviceType)).ToList());
+                    }
+                    catch (Exception exDevices)
+                    {
+                        _logger.LogWarning(exDevices, "PushNotificationService.SendCallWakeAsync: tb_UserDevices sorgusu basarisiz. SicilNo {SicilNo}", sicilNo);
+                        devices = new List<(string, string)>();
+                    }
+
+                    foreach (var device in devices)
+                    {
+                        if (string.IsNullOrEmpty(device.PushToken)) continue;
+
+                        if (device.DeviceType == "FcmVoip")
+                        {
+                            await _fcmVoip.SendCallWakeAsync(device.PushToken, callerSicilNo, callerName, roomUrl, callType, callerImage);
+                        }
+                        else
+                        {
+                            bool isProduction = device.DeviceType == "ApnsVoipProduction";
+                            await _apnsVoip.SendCallWakeAsync(device.PushToken, isProduction, callerSicilNo, callerName, roomUrl, callType, callerImage);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: SendCallWakeAsync failed for SicilNo {SicilNo}", sicilNo);
+            }
+        }
+
+        public async Task SendToUserBySicilNoAsync(string sicilNo, string title, string body, object data = null, string channelId = null)
         {
             if (string.IsNullOrEmpty(sicilNo)) return;
 
@@ -35,19 +86,33 @@ namespace OyemCore.BusinessLayer.Services
                 using (var scope = _scopeFactory.CreateScope())
                 {
                     var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
-                    
-                    var tokens = await context.tb_UserDevices
-                        .AsNoTracking()
-                        .Where(d => d.SicilNo == sicilNo)
-                        .Select(d => d.PushToken)
-                        .ToListAsync();
+
+                    // tb_UserDevices bazı tenant veritabanlarında (ör. IşıkTarım) henüz yok — bu tabloyu
+                    // sorgulamak SQL hatası fırlatıp SENDİRME İŞLEMİNİN TAMAMINI sessizce iptal ediyordu
+                    // (tb_Kullanici.PushToken yedek yoluna hiç sıra gelmeden). Artık bu sorgu KENDİ
+                    // try/catch'inde — tablo yoksa/hata verirse boş liste kabul edilip yedek yola düşülür.
+                    List<string> tokens;
+                    try
+                    {
+                        tokens = await context.tb_UserDevices
+                            .AsNoTracking()
+                            .Where(d => d.SicilNo == sicilNo)
+                            .Select(d => d.PushToken)
+                            .ToListAsync();
+                    }
+                    catch (Exception exDevices)
+                    {
+                        _logger.LogWarning(exDevices, "PushNotificationService: tb_UserDevices sorgusu basarisiz (tablo eksik olabilir), tb_Kullanici.PushToken yedegine dusuluyor. SicilNo {SicilNo}", sicilNo);
+                        LogPush(context, "PUSH-NOT-ERROR", $"tb_UserDevices sorgusu basarisiz. SicilNo: {sicilNo}, Hata: {exDevices.Message}");
+                        tokens = new List<string>();
+                    }
 
                     if (tokens.Count == 0)
                     {
                         var user = await context.tb_Kullanici
                             .AsNoTracking()
                             .FirstOrDefaultAsync(u => u.SicilNo == sicilNo);
-                        
+
                         if (user != null && !string.IsNullOrEmpty(user.PushToken))
                         {
                             tokens.Add(user.PushToken);
@@ -58,7 +123,7 @@ namespace OyemCore.BusinessLayer.Services
                     {
                         if (!string.IsNullOrEmpty(token))
                         {
-                            await SendExpoNotificationAsync(token, title, body, data);
+                            await SendExpoNotificationAsync(token, title, body, data, channelId, context);
                         }
                     }
                 }
@@ -66,10 +131,17 @@ namespace OyemCore.BusinessLayer.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "PushNotificationService: SendToUserBySicilNoAsync failed for SicilNo {SicilNo}", sicilNo);
+                try
+                {
+                    using var errScope = _scopeFactory.CreateScope();
+                    var errContext = errScope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    LogPush(errContext, "PUSH-NOT-ERROR", $"SendToUserBySicilNoAsync disaridaki catch'e dustu. SicilNo: {sicilNo}, Hata: {ex.Message}, StackTrace: {ex.StackTrace}");
+                }
+                catch { }
             }
         }
 
-        public async Task SendToUserByKullaniciIdAsync(int kullaniciId, string title, string body, object data = null)
+        public async Task SendToUserByKullaniciIdAsync(int kullaniciId, string title, string body, object data = null, string channelId = null)
         {
             try
             {
@@ -82,11 +154,20 @@ namespace OyemCore.BusinessLayer.Services
 
                     if (user != null)
                     {
-                        var tokens = await context.tb_UserDevices
-                            .AsNoTracking()
-                            .Where(d => d.SicilNo == user.SicilNo)
-                            .Select(d => d.PushToken)
-                            .ToListAsync();
+                        List<string> tokens;
+                        try
+                        {
+                            tokens = await context.tb_UserDevices
+                                .AsNoTracking()
+                                .Where(d => d.SicilNo == user.SicilNo)
+                                .Select(d => d.PushToken)
+                                .ToListAsync();
+                        }
+                        catch (Exception exDevices)
+                        {
+                            _logger.LogWarning(exDevices, "PushNotificationService: tb_UserDevices sorgusu basarisiz (tablo eksik olabilir), tb_Kullanici.PushToken yedegine dusuluyor. KullaniciID {KullaniciId}", kullaniciId);
+                            tokens = new List<string>();
+                        }
 
                         if (tokens.Count == 0 && !string.IsNullOrEmpty(user.PushToken))
                         {
@@ -97,7 +178,7 @@ namespace OyemCore.BusinessLayer.Services
                         {
                             if (!string.IsNullOrEmpty(token))
                             {
-                                await SendExpoNotificationAsync(token, title, body, data);
+                                await SendExpoNotificationAsync(token, title, body, data, channelId, context);
                             }
                         }
                     }
@@ -109,24 +190,75 @@ namespace OyemCore.BusinessLayer.Services
             }
         }
 
-        private async Task SendExpoNotificationAsync(string pushToken, string title, string body, object data)
+        // TEŞHİS: normal ILogger çıktısı bu ortamda görünür/erişilebilir değildi (WebPortal'daki
+        // fire-and-forget sorununa benzer bir belirsizlik) — bu yüzden aynı SicilNo/YBS DB'sindeki
+        // tb_Log'a da yazıyoruz ki kullanıcı SQL ile doğrudan gerçek Expo cevabını görebilsin.
+        // TEŞHİS: EF Core üzerinden (context.tb_Log.Add + SaveChanges) log yazma denemesi canlıda
+        // hiçbir iz bırakmıyordu (ne başarı ne hata) — bu, EF Core'un DbContext tracking/concurrency
+        // gibi bir nedenle sessizce başarısız olabileceğine işaret ediyor. Ham ADO.NET ile (ayrı,
+        // bağımsız bir SqlConnection) INSERT yaparak EF Core'u tamamen devre dışı bırakıyoruz —
+        // bu en güvenilir yol.
+        private void LogPush(IYbsDbContext context, string konu, string aciklama)
+        {
+            try
+            {
+                if (context == null) return;
+                string connStr = context.Database.GetConnectionString();
+                if (string.IsNullOrEmpty(connStr)) return;
+
+                using var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr);
+                conn.Open();
+                using var cmd = new Microsoft.Data.SqlClient.SqlCommand(
+                    "INSERT INTO tb_Log (SicilNo, Eposta, Konu, Aciklama, Cihaz, KayitTar) VALUES (@SicilNo, @Eposta, @Konu, @Aciklama, @Cihaz, @KayitTar)",
+                    conn);
+                cmd.Parameters.AddWithValue("@SicilNo", "SYSTEM");
+                cmd.Parameters.AddWithValue("@Eposta", "system@oyemsoft.com");
+                cmd.Parameters.AddWithValue("@Konu", konu);
+                cmd.Parameters.AddWithValue("@Aciklama", (object)aciklama ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Cihaz", "backend-raw");
+                cmd.Parameters.AddWithValue("@KayitTar", DateTime.Now);
+                cmd.ExecuteNonQuery();
+            }
+            catch (Exception logEx)
+            {
+                _logger.LogError(logEx, "PushNotificationService: LogPush (raw ADO.NET) basarisiz. Konu: {Konu}", konu);
+            }
+        }
+
+        private async Task SendExpoNotificationAsync(string pushToken, string title, string body, object data, string channelId = null, IYbsDbContext context = null)
         {
             if (!pushToken.StartsWith("ExponentPushToken["))
             {
                 _logger.LogWarning("PushNotificationService: Invalid Expo push token format: {Token}", pushToken);
+                LogPush(context, "PUSH-NOT-ERROR", $"Gecersiz token formati: {pushToken}");
                 return;
             }
 
             try
             {
-                var payload = new
-                {
-                    to = pushToken,
-                    title = title,
-                    body = body,
-                    sound = "default",
-                    data = data
-                };
+                // channelId Android'de hangi kanalın (ve dolayısıyla hangi zil sesinin) kullanılacağını
+                // belirler; iOS'ta "sound" alanı doğrudan bundle'lanmış ses dosyasının adını referans alır
+                // (native proje assets/sounds/incoming_call.wav'ı bu adla gömer — bkz. app.json expo-notifications
+                // plugin config). Kanalsız (normal mesaj) bildirimler eskisi gibi "default" sesi kullanır.
+                object payload = string.IsNullOrEmpty(channelId)
+                    ? new
+                    {
+                        to = pushToken,
+                        title = title,
+                        body = body,
+                        sound = "default",
+                        data = data
+                    }
+                    : (object)new
+                    {
+                        to = pushToken,
+                        title = title,
+                        body = body,
+                        sound = "incoming_call.wav",
+                        channelId = channelId,
+                        priority = "high",
+                        data = data
+                    };
 
                 // Türkçe karakterlerin bozulmadan gitmesi için gerçek UTF-8 JSON gönderilir
                 // (varsayılan encoder yerine UnsafeRelaxedJsonEscaping + explicit UTF-8 content).
@@ -138,10 +270,36 @@ namespace OyemCore.BusinessLayer.Services
                 var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
                 var response = await _httpClient.PostAsync("https://exp.host/--/api/v2/push/send", content);
-                if (!response.IsSuccessStatusCode)
+                var responseBody = await response.Content.ReadAsStringAsync();
+
+                // ÖNEMLİ: Expo, bilet (ticket) seviyesinde hata olsa bile (ör. DeviceNotRegistered,
+                // MessageTooBig, InvalidCredentials) HTTP 200 dönebiliyor — gerçek durum JSON içindeki
+                // data.status alanında. Sadece HTTP status koduna bakmak yanlış "başarılı" izlenimi
+                // veriyordu — bu yüzden artık gövdeyi de kontrol ediyoruz.
+                bool ticketError = false;
+                try
                 {
-                    var responseBody = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("PushNotificationService: Expo server returned error status code {StatusCode}. Response: {Response}", response.StatusCode, responseBody);
+                    using var doc = System.Text.Json.JsonDocument.Parse(responseBody);
+                    if (doc.RootElement.TryGetProperty("data", out var dataEl))
+                    {
+                        // Expo tekil istek için "data" bir obje, toplu istekte dizi döner — ikisini de karşıla.
+                        var statusEl = dataEl.ValueKind == System.Text.Json.JsonValueKind.Array
+                            ? (dataEl.GetArrayLength() > 0 ? dataEl[0] : default)
+                            : dataEl;
+                        if (statusEl.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                            statusEl.TryGetProperty("status", out var statusProp) &&
+                            statusProp.GetString() == "error")
+                        {
+                            ticketError = true;
+                        }
+                    }
+                }
+                catch { }
+
+                if (!response.IsSuccessStatusCode || ticketError)
+                {
+                    _logger.LogError("PushNotificationService: Expo push basarisiz. HTTP: {StatusCode}, TicketError: {TicketError}, Response: {Response}", response.StatusCode, ticketError, responseBody);
+                    LogPush(context, "PUSH-NOT-ERROR", $"Expo hata (HTTP {response.StatusCode}, TicketError: {ticketError}). Response: {responseBody}, Payload: {json}");
                 }
                 else
                 {
@@ -151,6 +309,7 @@ namespace OyemCore.BusinessLayer.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "PushNotificationService: SendExpoNotificationAsync failed for token {Token}", pushToken);
+                LogPush(context, "PUSH-NOT-ERROR", $"Exception: {ex.Message}, StackTrace: {ex.StackTrace}");
             }
         }
 
@@ -214,7 +373,7 @@ namespace OyemCore.BusinessLayer.Services
                     await SendToUserBySicilNoAsync(
                         leave.BekleyenOnay,
                         "Yeni Izin Talebi",
-                        $"{requesterName} yeni bir izin talebi olusturdu. Onayiniz bekleniyor.",
+                        $"{requesterName} yeni bir izin talebi olusturdu ({leave.BelgeNo}). Onayiniz bekleniyor.",
                         new { type = "izin", screen = "IzinScreen", code = leave.BelgeNo }
                     );
                 }
@@ -239,7 +398,7 @@ namespace OyemCore.BusinessLayer.Services
                     await SendToUserBySicilNoAsync(
                         leave.KayitSicil,
                         "Amir Onaylari Tamamlandi",
-                        "İzin talebinizin amir onay süreci tamamlandı, İK işlemi bekleniyor.",
+                        $"İzin talebinizin ({leave.BelgeNo}) amir onay süreci tamamlandı, İK işlemi bekleniyor.",
                         new { type = "izin", screen = "IzinScreen", code = leave.BelgeNo }
                     );
 
@@ -799,10 +958,12 @@ Yeni bir {typeLabel.ToLower()} talebi oluşturulmuştur ve yetki/sorumluluk alan
                         .Select(p => p.AdSoyad)
                         .FirstOrDefaultAsync() ?? log.TeslimEdenSicil;
 
+                    string demirbasKod = !string.IsNullOrEmpty(asset.DemirbasKodu) ? asset.DemirbasKodu : asset.AygitID.ToString();
+
                     await SendToUserBySicilNoAsync(
                         log.PersonelSicil,
                         "Üzerinize Yeni Zimmet Atandı",
-                        $"{senderName} tarafından üzerinize '{asset.Tanim}' demirbaşı zimmetlendi.",
+                        $"{senderName} tarafından üzerinize '{asset.Tanim}' ({demirbasKod}) demirbaşı zimmetlendi.",
                         new { type = "zimmet", screen = "ZimmetlerimScreen", id = log.AygitID }
                     );
                 }
@@ -829,10 +990,12 @@ Yeni bir {typeLabel.ToLower()} talebi oluşturulmuştur ve yetki/sorumluluk alan
                     var receiverUser = await context.tb_Kullanici.AsNoTracking().FirstOrDefaultAsync(u => u.KullaniciID == actionUserId);
                     var receiverName = receiverUser?.AdSoyad ?? "Zimmet Sorumlusu";
 
+                    string demirbasKod = !string.IsNullOrEmpty(asset.DemirbasKodu) ? asset.DemirbasKodu : asset.AygitID.ToString();
+
                     await SendToUserBySicilNoAsync(
                         log.PersonelSicil,
                         "Zimmet Iade Alindi",
-                        $"Üzerinizdeki '{asset.Tanim}' demirbaşı {receiverName} tarafından iade alındı ve zimmetiniz düşürüldü.",
+                        $"Üzerinizdeki '{asset.Tanim}' ({demirbasKod}) demirbaşı {receiverName} tarafından iade alındı ve zimmetiniz düşürüldü.",
                         new { type = "zimmet", screen = "ZimmetlerimScreen", id = log.AygitID }
                     );
                 }
@@ -840,6 +1003,138 @@ Yeni bir {typeLabel.ToLower()} talebi oluşturulmuştur ve yetki/sorumluluk alan
             catch (Exception ex)
             {
                 _logger.LogError(ex, "PushNotificationService: NotifyAssetReturnedAsync failed for ID {ID}", aygitPersonelId);
+            }
+        }
+
+        public async Task NotifyAssetRemovedAsync(string personelSicil, int aygitId, string actionUserAdSoyad)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    var asset = await context.tb_Aygit.AsNoTracking().FirstOrDefaultAsync(a => a.AygitID == aygitId);
+                    if (asset == null) return;
+
+                    string demirbasKod = !string.IsNullOrEmpty(asset.DemirbasKodu) ? asset.DemirbasKodu : asset.AygitID.ToString();
+
+                    await SendToUserBySicilNoAsync(
+                        personelSicil,
+                        "Zimmet Kaldırıldı",
+                        $"{actionUserAdSoyad} tarafından üzerinizdeki '{asset.Tanim}' ({demirbasKod}) demirbaş zimmeti kaldırıldı.",
+                        new { type = "zimmet", screen = "ZimmetlerimScreen", id = aygitId }
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyAssetRemovedAsync failed for AygitID {ID}", aygitId);
+            }
+        }
+
+        public async Task NotifyAssetFaultReportedAsync(string adminSicilNo, int aygitId, string reporterAdSoyad, string description)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    var asset = await context.tb_Aygit.AsNoTracking().FirstOrDefaultAsync(a => a.AygitID == aygitId);
+                    if (asset == null) return;
+
+                    string demirbasKod = !string.IsNullOrEmpty(asset.DemirbasKodu) ? asset.DemirbasKodu : asset.AygitID.ToString();
+
+                    await SendToUserBySicilNoAsync(
+                        adminSicilNo,
+                        "Demirbaş Arıza Bildirimi",
+                        $"{reporterAdSoyad} tarafından '{asset.Tanim}' ({demirbasKod}) demirbaş için arıza bildirildi: {description}",
+                        new { type = "zimmet", screen = "DemirbasDetayScreen", id = aygitId }
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyAssetFaultReportedAsync failed for AygitID {ID}", aygitId);
+            }
+        }
+
+        // --------------------------------------------------------------------
+        // Bakım Planı / Periyodik Kontrol Planı - Temizlik Onay Formu
+        // --------------------------------------------------------------------
+
+        public async Task NotifyTemizlikOnayCreatedAsync(int onayId)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    var onay = await context.tb_BakimPlanTemizlikOnay.AsNoTracking().FirstOrDefaultAsync(o => o.OnayID == onayId);
+                    if (onay == null) return;
+
+                    await SendToUserBySicilNoAsync(
+                        onay.SecilenSicil,
+                        "Temizlik ve Kontrol Formu Onay Bekliyor",
+                        $"#{onay.PlanKodu} nolu işlem tamamlanmıştır. Lütfen makine temizlik ve kontrol formunu doldurarak onaylayınız.",
+                        new { type = "temizlikonay", planTuru = onay.PlanTuru, planKodu = onay.PlanKodu, onayId = onay.OnayID, screen = "TemizlikOnayForm", id = onay.OnayID }
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyTemizlikOnayCreatedAsync failed for ID {ID}", onayId);
+            }
+        }
+
+        public async Task NotifyTemizlikOnayCompletedAsync(int onayId)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    var onay = await context.tb_BakimPlanTemizlikOnay.AsNoTracking().FirstOrDefaultAsync(o => o.OnayID == onayId);
+                    if (onay == null) return;
+
+                    var doldurgan = await context.tb_Personel.AsNoTracking().Where(p => p.SicilNo == onay.SecilenSicil).Select(p => p.AdSoyad).FirstOrDefaultAsync() ?? onay.SecilenSicil;
+
+                    await SendToUserBySicilNoAsync(
+                        onay.SecenSicil,
+                        "Temizlik Onay Formu Dolduruldu",
+                        $"{doldurgan} tarafından #{onay.PlanKodu} nolu işlemin temizlik onay formu dolduruldu.",
+                        new { type = "temizlikonay", planTuru = onay.PlanTuru, planKodu = onay.PlanKodu, onayId = onay.OnayID, screen = onay.PlanTuru == "PERIYODIK" ? "PeriyodikKontrol" : "BakimPlan", code = onay.PlanKodu }
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyTemizlikOnayCompletedAsync failed for ID {ID}", onayId);
+            }
+        }
+
+        public async Task NotifyTemizlikOnayRejectedAsync(int onayId)
+        {
+            try
+            {
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    var onay = await context.tb_BakimPlanTemizlikOnay.AsNoTracking().FirstOrDefaultAsync(o => o.OnayID == onayId);
+                    if (onay == null) return;
+
+                    var reddeden = await context.tb_Personel.AsNoTracking().Where(p => p.SicilNo == onay.SecilenSicil).Select(p => p.AdSoyad).FirstOrDefaultAsync() ?? onay.SecilenSicil;
+
+                    await SendToUserBySicilNoAsync(
+                        onay.SecenSicil,
+                        "İşlem Tamamlanmadı Olarak Geri Gönderildi",
+                        $"{reddeden} tarafından #{onay.PlanKodu} nolu işlem temizlik/kontrol açısından uygun bulunmadı.",
+                        new { type = "temizlikonay", planTuru = onay.PlanTuru, planKodu = onay.PlanKodu, onayId = onay.OnayID, screen = onay.PlanTuru == "PERIYODIK" ? "PeriyodikKontrol" : "BakimPlan", code = onay.PlanKodu }
+                    );
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "PushNotificationService: NotifyTemizlikOnayRejectedAsync failed for ID {ID}", onayId);
             }
         }
 

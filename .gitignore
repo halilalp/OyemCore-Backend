@@ -31,3 +31,7 @@ Thumbs.db
 publish/
 httpdocs/HelpDesk/Docs/
 FixEncoding2/
+
+# Firebase servis hesabı kimlik bilgisi (private key içerir, ASLA git'e girmemeli)
+firebase-service-account.json
+apns-voip-key.p8

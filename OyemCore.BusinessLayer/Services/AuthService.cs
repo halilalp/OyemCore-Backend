@@ -162,8 +162,14 @@ namespace OyemCore.BusinessLayer.Services
                     }
                 }
 
-                LogKaydet("", "", "LOG_HATA", $"Hatali Giris: Tanimsiz Hata - Girilen: {username}{info}");
-                return (false, null, "Kullanici Adi/Şifre bilgileri dogru degil.");
+                string errDetail = "Kullanici Adi/Şifre bilgileri dogru degil.";
+                if (ldapResult.ErrorMessage != null)
+                {
+                    errDetail = $"LDAP Hatası: {ldapResult.ErrorMessage}";
+                }
+
+                LogKaydet("", "", "LOG_HATA", $"Hatali Giris: {errDetail} - Girilen: {username}{info}");
+                return (false, null, errDetail);
             }
             catch (Exception ex)
             {
@@ -383,6 +389,54 @@ namespace OyemCore.BusinessLayer.Services
             catch (Exception ex)
             {
                 Console.WriteLine($"SavePushToken error: {ex}");
+            }
+        }
+
+        // Native tam ekran gelen arama (CallKit/ConnectionService) uyandırma token'ı — SavePushToken'dan
+        // (Expo push) KASITLI OLARAK AYRI: tb_Kullanici.PushToken'a (Expo push'un tb_UserDevices
+        // sorgusu başarısız olursa düştüğü yedek alan) HİÇ dokunmaz. Oraya bir FCM/APNs token yazılsaydı
+        // Expo yedek gönderimi (SendExpoNotificationAsync'in "ExponentPushToken[" kontrolü) sessizce
+        // bozulurdu. deviceType: "FcmVoip" (Android) / "ApnsVoipSandbox" / "ApnsVoipProduction" (iOS).
+        public void SaveVoipToken(int kullaniciID, string token, string deviceType)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(deviceType)) return;
+
+                var user = _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == kullaniciID);
+                if (user == null || string.IsNullOrEmpty(user.SicilNo)) return;
+
+                // Aynı token başka bir kullanıcıda kayıtlıysa (cihaz el değiştirmiş olabilir) temizle.
+                var otherUsersDevices = _context.tb_UserDevices
+                    .Where(d => d.PushToken == token && d.DeviceType == deviceType && d.SicilNo != user.SicilNo)
+                    .ToList();
+                _context.tb_UserDevices.RemoveRange(otherUsersDevices);
+
+                var device = _context.tb_UserDevices
+                    .FirstOrDefault(d => d.SicilNo == user.SicilNo && d.PushToken == token && d.DeviceType == deviceType);
+
+                if (device == null)
+                {
+                    device = new tb_UserDevices
+                    {
+                        SicilNo = user.SicilNo,
+                        PushToken = token,
+                        DeviceType = deviceType,
+                        KayitTarihi = DateTime.Now,
+                        SonGirisTarihi = DateTime.Now
+                    };
+                    _context.tb_UserDevices.Add(device);
+                }
+                else
+                {
+                    device.SonGirisTarihi = DateTime.Now;
+                }
+
+                _context.SaveChanges();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"SaveVoipToken error: {ex}");
             }
         }
 

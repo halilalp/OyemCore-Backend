@@ -6,9 +6,15 @@ using Microsoft.AspNetCore.Mvc;
 using OyemCore.BusinessLayer.Dtos;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
+using OyemCore.Backend.Authorization;
 
 namespace OyemCore.Backend.Controllers
 {
+    // "plan/*" ve "periyodik/*" endpoint gruplari hem Planlama hem Islem ekranlari tarafindan
+    // paylasiliyor (ayni liste, farkli UI modu) - bu yuzden RequiresSayfaYetkisi iki sayfaUrl'in
+    // herhangi birini kabul ediyor (bkz. bakimYetki.ts'teki ayni eslestirme, mobil client'ta zaten
+    // uygulanan kural). Referans/ortak veri endpoint'leri (dropdowns, makine, rapor/*) kasitli
+    // olarak gated degil - plan/periyodik disindaki akislarda da (talep vb.) kullaniliyor.
     [Authorize]
     [ApiController]
     [Route("api/[controller]")]
@@ -113,6 +119,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="pageSize">Sayfa boyutu.</param>
         /// <returns>Sayfalanmis bakim plan listesi d?ner.</returns>
         [HttpGet("plan")]
+        [RequiresSayfaYetkisi("/Bakim/BakimPlani.html", "/Bakim/BakimIslem.html")]
         public ActionResult<PaginatedListDto<BakimPlanDto>> GetBakimPlans(
             [FromQuery] string sirket = "", 
             [FromQuery] string bolum = "", 
@@ -140,6 +147,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Bakim plani bilgilerini i?eren istek nesnesi.</param>
         /// <returns>Kayit basarili ise plan kodunu d?ner.</returns>
         [HttpPost("plan")]
+        [RequiresSayfaYetkisi("/Bakim/BakimPlani.html", "/Bakim/BakimIslem.html")]
         public IActionResult SavePlan([FromBody] SavePlanRequest request)
         {
             try
@@ -161,12 +169,13 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Yeni durum ve a?iklama notlarini i?eren istek nesnesi.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("plan/{code}/status")]
+        [RequiresSayfaYetkisi("/Bakim/BakimPlani.html", "/Bakim/BakimIslem.html")]
         public IActionResult UpdatePlanStatus(string code, [FromBody] UpdatePlanStatusRequest request)
         {
             try
             {
                 var sicil = GetCurrentSicilNo();
-                bool success = _bakimService.UpdateBakimPlanStatus(code, request.Durum, request.Not, request.DosyaUrl, sicil);
+                bool success = _bakimService.UpdateBakimPlanStatus(code, request.Durum, request.Not, request.DosyaUrl, sicil, request.SecilenSicil);
                 return Ok(new { success });
             }
             catch (Exception ex)
@@ -181,6 +190,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="code">Notlari getirilecek bakim planinin kodu.</param>
         /// <returns>Not listesini d?ner.</returns>
         [HttpGet("plan/{code}/notlar")]
+        [RequiresSayfaYetkisi("/Bakim/BakimPlani.html", "/Bakim/BakimIslem.html")]
         public ActionResult<IEnumerable<BakimPlanDetayDto>> GetPlanNotlar(string code)
         {
             try
@@ -200,6 +210,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="code">Silinecek planin kodu.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpDelete("plan/{code}")]
+        [RequiresSayfaYetkisi("/Bakim/BakimPlani.html", "/Bakim/BakimIslem.html")]
         public IActionResult DeletePlan(string code)
         {
             try
@@ -219,6 +230,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="id">Silinecek gelisme kaydinin ID degeri.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpDelete("plan/gelisme/{id}")]
+        [RequiresSayfaYetkisi("/Bakim/BakimPlani.html", "/Bakim/BakimIslem.html")]
         public IActionResult DeletePlanGelisme(int id)
         {
             try
@@ -244,6 +256,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="pageSize">Sayfa boyutu.</param>
         /// <returns>Sayfalanmis periyodik kontrol listesi d?ner.</returns>
         [HttpGet("periyodik")]
+        [RequiresSayfaYetkisi("/Bakim/PeriyodikKontrolPlani.html", "/Bakim/PeriyodikKontrolIslem.html")]
         public ActionResult<PaginatedListDto<PeriyodikKontrolDto>> GetPeriyodikKontrols(
             [FromQuery] string sirket = "", 
             [FromQuery] string bolum = "", 
@@ -270,6 +283,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Olusturulacak periyodik kontrol detaylarini i?eren istek nesnesi.</param>
         /// <returns>Kayit basarili ise periyodik kontrol kodunu d?ner.</returns>
         [HttpPost("periyodik")]
+        [RequiresSayfaYetkisi("/Bakim/PeriyodikKontrolPlani.html", "/Bakim/PeriyodikKontrolIslem.html")]
         public IActionResult SavePeriyodik([FromBody] SavePeriyodikRequest request)
         {
             try
@@ -291,12 +305,13 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Yeni durum ve a?iklama bilgilerini i?eren istek nesnesi.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("periyodik/{code}/status")]
+        [RequiresSayfaYetkisi("/Bakim/PeriyodikKontrolPlani.html", "/Bakim/PeriyodikKontrolIslem.html")]
         public IActionResult UpdatePeriyodikStatus(string code, [FromBody] UpdatePeriyodikStatusRequest request)
         {
             try
             {
                 var sicil = GetCurrentSicilNo();
-                bool success = _bakimService.UpdatePeriyodikStatus(code, request.Durum, request.Aciklama, sicil);
+                bool success = _bakimService.UpdatePeriyodikStatus(code, request.Durum, request.Aciklama, sicil, request.SecilenSicil);
                 return Ok(new { success });
             }
             catch (Exception ex)
@@ -311,6 +326,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="code">Silinecek periyodik kontrol kodu.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpDelete("periyodik/{code}")]
+        [RequiresSayfaYetkisi("/Bakim/PeriyodikKontrolPlani.html", "/Bakim/PeriyodikKontrolIslem.html")]
         public IActionResult DeletePeriyodik(string code)
         {
             try
@@ -330,6 +346,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="code">Periyodik kontrol kodu.</param>
         /// <returns>Malzeme sarfiyat listesini d?ner.</returns>
         [HttpGet("periyodik/{code}/sarfiyat")]
+        [RequiresSayfaYetkisi("/Bakim/PeriyodikKontrolPlani.html", "/Bakim/PeriyodikKontrolIslem.html")]
         public ActionResult<IEnumerable<PeriyodikSarfiyatDto>> GetPeriyodikSarfiyats(string code)
         {
             try
@@ -350,6 +367,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Kullanilan malzeme kodu ve miktarini i?eren istek nesnesi.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("periyodik/{code}/sarfiyat")]
+        [RequiresSayfaYetkisi("/Bakim/PeriyodikKontrolPlani.html", "/Bakim/PeriyodikKontrolIslem.html")]
         public IActionResult SavePeriyodikSarfiyat(string code, [FromBody] SaveSarfiyatRequest request)
         {
             try
@@ -370,6 +388,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="id">Silinecek sarfiyat kaydinin ID degeri.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpDelete("periyodik/sarfiyat/{id}")]
+        [RequiresSayfaYetkisi("/Bakim/PeriyodikKontrolPlani.html", "/Bakim/PeriyodikKontrolIslem.html")]
         public IActionResult DeletePeriyodikSarfiyat(int id)
         {
             try
@@ -385,6 +404,7 @@ namespace OyemCore.Backend.Controllers
 
         // ── Bakım Planı sarfiyatı + hata bağlı makineler ──
         [HttpGet("plan/{code}/sarfiyat")]
+        [RequiresSayfaYetkisi("/Bakim/BakimPlani.html", "/Bakim/BakimIslem.html")]
         public ActionResult<IEnumerable<BakimSarfiyatDto>> GetBakimSarfiyats(string code)
         {
             try { return Ok(_bakimService.GetBakimSarfiyats(code)); }
@@ -392,6 +412,7 @@ namespace OyemCore.Backend.Controllers
         }
 
         [HttpPost("plan/{code}/sarfiyat")]
+        [RequiresSayfaYetkisi("/Bakim/BakimPlani.html", "/Bakim/BakimIslem.html")]
         public IActionResult SaveBakimSarfiyat(string code, [FromBody] SaveSarfiyatRequest request)
         {
             try
@@ -404,6 +425,7 @@ namespace OyemCore.Backend.Controllers
         }
 
         [HttpDelete("plan/sarfiyat/{id}")]
+        [RequiresSayfaYetkisi("/Bakim/BakimPlani.html", "/Bakim/BakimIslem.html")]
         public IActionResult DeleteBakimSarfiyat(int id)
         {
             try { return Ok(new { success = _bakimService.DeleteBakimSarfiyat(id) }); }
@@ -423,6 +445,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="code">Gelismeleri getirilecek periyodik kontrol kodu.</param>
         /// <returns>Gelisme/not listesini d?ner.</returns>
         [HttpGet("periyodik/{code}/gelisme")]
+        [RequiresSayfaYetkisi("/Bakim/PeriyodikKontrolPlani.html", "/Bakim/PeriyodikKontrolIslem.html")]
         public ActionResult<IEnumerable<BakimPlanDetayDto>> GetPeriyodikGelismeler(string code)
         {
             try
@@ -443,6 +466,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Gelisme a?iklamasi ve dosya yolu bilgilerini i?eren istek nesnesi.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("periyodik/{code}/gelisme")]
+        [RequiresSayfaYetkisi("/Bakim/PeriyodikKontrolPlani.html", "/Bakim/PeriyodikKontrolIslem.html")]
         public IActionResult SavePeriyodikGelisme(string code, [FromBody] SavePeriyodikGelismeRequest request)
         {
             try
@@ -458,6 +482,7 @@ namespace OyemCore.Backend.Controllers
         }
 
         [HttpPost("plan/{code}/gelisme")]
+        [RequiresSayfaYetkisi("/Bakim/BakimPlani.html", "/Bakim/BakimIslem.html")]
         public IActionResult SavePlanGelisme(string code, [FromBody] SavePlanGelismeRequest request)
         {
             try
@@ -478,6 +503,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="id">Silinecek gelismenin ID degeri.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpDelete("periyodik/gelisme/{id}")]
+        [RequiresSayfaYetkisi("/Bakim/PeriyodikKontrolPlani.html", "/Bakim/PeriyodikKontrolIslem.html")]
         public IActionResult DeletePeriyodikGelisme(int id)
         {
             try

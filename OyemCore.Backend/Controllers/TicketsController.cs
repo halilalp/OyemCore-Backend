@@ -9,6 +9,10 @@ using Microsoft.AspNetCore.Mvc;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
 
+using Microsoft.AspNetCore.SignalR;
+using OyemCore.Backend.Hubs;
+using System.Threading.Tasks;
+
 namespace OyemCore.Backend.Controllers
 {
     [Authorize]
@@ -19,12 +23,14 @@ namespace OyemCore.Backend.Controllers
         private readonly ITicketService _ticketService;
         private readonly ITenantService _tenantService;
         private readonly IWebHostEnvironment _env;
+        private readonly IHubContext<ChatHub> _hubContext;
 
-        public TicketsController(ITicketService ticketService, ITenantService tenantService, IWebHostEnvironment env)
+        public TicketsController(ITicketService ticketService, ITenantService tenantService, IWebHostEnvironment env, IHubContext<ChatHub> hubContext)
         {
             _ticketService = ticketService;
             _tenantService = tenantService;
             _env = env;
+            _hubContext = hubContext;
         }
 
         private int GetCurrentUserId()
@@ -109,12 +115,13 @@ namespace OyemCore.Backend.Controllers
         /// <param name="ticket">Kaydedilecek ticket bilgilerini i?eren nesne.</param>
         /// <returns>Kayit basarili ise ticket ID ve mesaj bilgisini d?ner.</returns>
         [HttpPost]
-        public IActionResult SaveTicket([FromBody] tb_Ticket ticket)
+        public async Task<IActionResult> SaveTicket([FromBody] tb_Ticket ticket)
         {
             try
             {
                 int userId = GetCurrentUserId();
                 string ticketIdStr = _ticketService.SaveTicket(userId, ticket);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { id = int.Parse(ticketIdStr), message = "Ticket basariyla kaydedildi." });
             }
             catch (Exception ex)
@@ -130,12 +137,13 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Yeni durum ve s?r?klenen ticket ID bilgilerini i?eren nesne.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("{id}/status")]
-        public IActionResult UpdateStatus(int id, [FromBody] UpdateStatusRequest request)
+        public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateStatusRequest request)
         {
             try
             {
                 int userId = GetCurrentUserId();
                 bool success = _ticketService.UpdateTicketStatus(userId, id, request.YeniDurum, request.DraggedID);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success });
             }
             catch (Exception ex)
@@ -151,12 +159,13 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Atanacak personelin sicil numarasini i?eren nesne.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("{id}/assign")]
-        public IActionResult Assign(int id, [FromBody] AssignRequest request)
+        public async Task<IActionResult> Assign(int id, [FromBody] AssignRequest request)
         {
             try
             {
                 int userId = GetCurrentUserId();
                 bool success = _ticketService.AssignTicket(userId, id, request.SicilNo);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success });
             }
             catch (Exception ex)
@@ -172,7 +181,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Yorum a?iklamasini i?eren nesne.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("{id}/comment")]
-        public IActionResult SaveComment(int id, [FromBody] SaveCommentRequest request)
+        public async Task<IActionResult> SaveComment(int id, [FromBody] SaveCommentRequest request)
         {
             try
             {
@@ -180,6 +189,7 @@ namespace OyemCore.Backend.Controllers
                 if (request == null || string.IsNullOrWhiteSpace(request.Aciklama))
                     return BadRequest(new { message = "Gelişme açıklaması boş olamaz." });
                 bool success = _ticketService.SaveComment(userId, id, request.Aciklama);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success });
             }
             catch (Exception ex)
@@ -248,6 +258,7 @@ namespace OyemCore.Backend.Controllers
                     return BadRequest(new { message = "Dosya yüklendi ancak bilete eklenemedi." });
                 }
 
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success = true, filePath = relativeUrl, fileName = dto.FileName });
             }
             catch (Exception ex)
@@ -262,12 +273,13 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Siralanmis ticket ID'leri ve yeni durum bilgilerini i?eren nesne.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("sira")]
-        public IActionResult UpdateSira([FromBody] UpdateSiraRequest request)
+        public async Task<IActionResult> UpdateSira([FromBody] UpdateSiraRequest request)
         {
             try
             {
                 int userId = GetCurrentUserId();
                 bool success = _ticketService.UpdateTicketSira(userId, request.TicketIDs, request.YeniDurum, request.DraggedID);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success });
             }
             catch (Exception ex)
@@ -282,7 +294,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="id">Silinecek ticket ID degeri.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpDelete("{id}")]
-        public IActionResult Delete(int id)
+        public async Task<IActionResult> Delete(int id)
         {
             try
             {
@@ -290,6 +302,7 @@ namespace OyemCore.Backend.Controllers
                 string result = _ticketService.DeleteTicket(userId, id, _env.WebRootPath ?? _env.ContentRootPath);
                 if (result == "1")
                 {
+                    await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                     return Ok(new { success = true });
                 }
                 return BadRequest(new { message = result });

@@ -16,6 +16,7 @@ namespace OyemCore.BusinessLayer.Dtos
         public int UnreadCount { get; set; }
         public bool IsOnline { get; set; }
         public string OlusturanSicilNo { get; set; }
+        public bool IsGroupDeleted { get; set; }   // grup kurucu tarafından kapatıldı mı
     }
 
     public class ChatGroupMemberDto

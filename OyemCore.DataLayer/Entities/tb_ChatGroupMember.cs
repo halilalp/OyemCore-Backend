@@ -10,5 +10,6 @@ namespace OyemCore.DataLayer.Entities
         public string SicilNo { get; set; }
         public DateTime KayitTarihi { get; set; }
         public DateTime? SonOkumaTarihi { get; set; }  // okunmamış hesabı için
+        public bool Silindi { get; set; }               // üye grubu kendi listesinden sildi (ayrıldı)
     }
 }

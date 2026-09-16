@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
 using OyemCore.DataLayer.Interfaces;
@@ -15,16 +16,28 @@ namespace OyemCore.BusinessLayer.Services
         private readonly IYbsDbContext _context;
         private readonly IBildirimService _bildirim;
         private readonly IPushNotificationService _push;
+        private readonly INotificationService _notificationService;
 
-        public AvansMasrafService(IYbsDbContext context, IBildirimService bildirim, IPushNotificationService push)
+        public AvansMasrafService(IYbsDbContext context, IBildirimService bildirim, IPushNotificationService push, INotificationService notificationService)
         {
             _context = context;
             _bildirim = bildirim;
             _push = push;
+            _notificationService = notificationService;
         }
 
         private tb_Kullanici CurrentUser(int kullaniciID) =>
             _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == kullaniciID);
+
+        private string GetUserEmailBySicil(string sicilNo)
+        {
+            if (string.IsNullOrEmpty(sicilNo)) return null;
+            return _context.tb_Kullanici
+                .AsNoTracking()
+                .Where(u => u.SicilNo == sicilNo && !string.IsNullOrEmpty(u.Eposta))
+                .Select(u => u.Eposta)
+                .FirstOrDefault();
+        }
 
         private void BelgeTarihceKaydet(string belgeNo, string konu, string aciklama)
         {
@@ -83,6 +96,21 @@ namespace OyemCore.BusinessLayer.Services
                 {
                     _bildirim.AddNotification(bekleyen, "Avans Onay Bekliyor", $"{usr.AdSoyad} tarafından #{belgeNo} nolu avans talebi onayınıza sunuldu.", "", "Avans", yeni.AvansID.ToString(), kullaniciID);
                     _ = _push.SendToUserBySicilNoAsync(bekleyen, "Avans Onay Bekliyor", $"{usr.AdSoyad} tarafından #{belgeNo} nolu avans talebi onayınıza sunuldu.", new { type = "avans", screen = "AvansMasraf", id = yeni.AvansID.ToString() });
+
+                    // Mail gönderimi (Talep Eden)
+                    if (!string.IsNullOrEmpty(usr.Eposta))
+                    {
+                        _ = _notificationService.SendMailAsync("OyemCore Avans", "Avans Talebiniz Alındı", 
+                            $"Merhaba {usr.AdSoyad},<br/><br/>{belgeNo} nolu avans talebiniz başarıyla oluşturulmuş ve amir onayına sunulmuştur.<br/><b>Tutar:</b> {tutar} TL<br/><b>Açıklama:</b> {aciklama}<br/><br/>İyi çalışmalar dileriz.", usr.Eposta);
+                    }
+
+                    // Mail gönderimi (Bekleyen Amir)
+                    var amirEposta = GetUserEmailBySicil(bekleyen);
+                    if (!string.IsNullOrEmpty(amirEposta))
+                    {
+                        _ = _notificationService.SendMailAsync("OyemCore Avans", "Yeni Avans Onay Talebi", 
+                            $"Merhaba,<br/><br/>{usr.AdSoyad} tarafından oluşturulan {belgeNo} nolu avans talebi onayınızda beklemektedir.<br/><b>Tutar:</b> {tutar} TL<br/><b>Açıklama:</b> {aciklama}<br/><br/>İyi çalışmalar dileriz.", amirEposta);
+                    }
                 }
 
                 return new { success = true, message = "Talep başarıyla oluşturuldu.", BelgeNo = belgeNo };
@@ -147,6 +175,21 @@ namespace OyemCore.BusinessLayer.Services
                 {
                     _bildirim.AddNotification(bekleyen, "Masraf Onay Bekliyor", $"{usr.AdSoyad} tarafından #{belgeNo} nolu masraf talebi onayınıza sunuldu.", "", "Masraf", yeni.MasrafID.ToString(), kullaniciID);
                     _ = _push.SendToUserBySicilNoAsync(bekleyen, "Masraf Onay Bekliyor", $"{usr.AdSoyad} tarafından #{belgeNo} nolu masraf talebi onayınıza sunuldu.", new { type = "masraf", screen = "AvansMasraf", id = yeni.MasrafID.ToString() });
+
+                    // Mail gönderimi (Talep Eden)
+                    if (!string.IsNullOrEmpty(usr.Eposta))
+                    {
+                        _ = _notificationService.SendMailAsync("OyemCore Masraf", "Masraf Talebiniz Alındı", 
+                            $"Merhaba {usr.AdSoyad},<br/><br/>{belgeNo} nolu masraf talebiniz başarıyla oluşturulmuş ve amir onayına sunulmuştur.<br/><b>Toplam Tutar:</b> {toplamTutar} TL<br/><b>Açıklama:</b> {aciklama}<br/><br/>İyi çalışmalar dileriz.", usr.Eposta);
+                    }
+
+                    // Mail gönderimi (Bekleyen Amir)
+                    var amirEposta = GetUserEmailBySicil(bekleyen);
+                    if (!string.IsNullOrEmpty(amirEposta))
+                    {
+                        _ = _notificationService.SendMailAsync("OyemCore Masraf", "Yeni Masraf Onay Talebi", 
+                            $"Merhaba,<br/><br/>{usr.AdSoyad} tarafından oluşturulan {belgeNo} nolu masraf talebi onayınızda beklemektedir.<br/><b>Toplam Tutar:</b> {toplamTutar} TL<br/><b>Açıklama:</b> {aciklama}<br/><br/>İyi çalışmalar dileriz.", amirEposta);
+                    }
                 }
 
                 return new { success = true, message = "Talep başarıyla oluşturuldu.", BelgeNo = belgeNo };
@@ -408,16 +451,40 @@ namespace OyemCore.BusinessLayer.Services
             {
                 _bildirim.AddNotification(yeniBekleyen, $"{t} Onay Bekliyor", $"{usr.AdSoyad} tarafından onaylanan #{belgeNo} nolu talep onayınıza sunuldu.", "", t, id.ToString(), kullaniciID);
                 _ = _push.SendToUserBySicilNoAsync(yeniBekleyen, $"{t} Onay Bekliyor", $"{usr.AdSoyad} tarafından onaylanan #{belgeNo} nolu talep onayınıza sunuldu.", new { type = t.ToLower(), screen = "AvansMasraf", id = id.ToString() });
+
+                // Mail gönderimi (Sonraki Bekleyen Amir)
+                var amirEposta = GetUserEmailBySicil(yeniBekleyen);
+                if (!string.IsNullOrEmpty(amirEposta))
+                {
+                    _ = _notificationService.SendMailAsync($"OyemCore {t}", $"{t} Talebi Onay Bekliyor", 
+                        $"Merhaba,<br/><br/>{usr.AdSoyad} tarafından onaylanan ve onayınıza sevk edilen {belgeNo} nolu {t.ToLower()} talebi onayınızda beklemektedir.<br/><b>Önceki Onaylayan:</b> {usr.AdSoyad}<br/><br/>İyi çalışmalar dileriz.", amirEposta);
+                }
             }
             else if (yeniDurum == "ONAYLANDI")
             {
                 _bildirim.AddNotification(talepEdenSicil, $"{t} Onaylandı", $"#{belgeNo} nolu talebiniz onaylandı.", "", t, id.ToString(), kullaniciID);
                 _ = _push.SendToUserBySicilNoAsync(talepEdenSicil, $"{t} Onaylandı", $"#{belgeNo} nolu talebiniz onaylandı.", new { type = t.ToLower(), screen = "AvansMasraf", id = id.ToString() });
+
+                // Mail gönderimi (Talep Eden)
+                var talepEdenEposta = GetUserEmailBySicil(talepEdenSicil);
+                if (!string.IsNullOrEmpty(talepEdenEposta))
+                {
+                    _ = _notificationService.SendMailAsync($"OyemCore {t}", $"{t} Talebiniz Onaylandı", 
+                        $"Merhaba,<br/><br/>{belgeNo} nolu {t.ToLower()} talebiniz onay sürecinden geçerek tamamen onaylanmıştır.<br/><b>Son Onaylayan:</b> {usr.AdSoyad}<br/><br/>İyi çalışmalar dileriz.", talepEdenEposta);
+                }
             }
             else if (yeniDurum == "REDDEDILDI")
             {
                 _bildirim.AddNotification(talepEdenSicil, $"{t} Reddedildi", $"#{belgeNo} nolu talebiniz reddedildi. Gerekçe: {aciklama}", "", t, id.ToString(), kullaniciID);
                 _ = _push.SendToUserBySicilNoAsync(talepEdenSicil, $"{t} Reddedildi", $"#{belgeNo} nolu talebiniz reddedildi. Gerekçe: {aciklama}", new { type = t.ToLower(), screen = "AvansMasraf", id = id.ToString() });
+
+                // Mail gönderimi (Talep Eden)
+                var talepEdenEposta = GetUserEmailBySicil(talepEdenSicil);
+                if (!string.IsNullOrEmpty(talepEdenEposta))
+                {
+                    _ = _notificationService.SendMailAsync($"OyemCore {t}", $"{t} Talebiniz Reddedildi", 
+                        $"Merhaba,<br/><br/>{belgeNo} nolu {t.ToLower()} talebiniz reddedilmiştir.<br/><b>İşlem Yapan:</b> {usr.AdSoyad}<br/><b>Gerekçe:</b> {aciklama}<br/><br/>İyi çalışmalar dileriz.", talepEdenEposta);
+                }
             }
 
             return new { success = true, message = "İşlem başarıyla tamamlandı." };

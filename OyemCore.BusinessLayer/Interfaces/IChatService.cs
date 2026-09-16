@@ -16,6 +16,8 @@ namespace OyemCore.BusinessLayer.Interfaces
         object LeaveGroup(int kullaniciID, string groupCode);
         IEnumerable<object> GetSharedFiles(int kullaniciID, string targetSicilNo);
         int GetTotalUnreadCount(int kullaniciID);
+        object ClearConversation(int kullaniciID, string targetSicilNo);
+        object DeleteGroup(int kullaniciID, string groupCode);
         object GetActiveConnections();
     }
 }

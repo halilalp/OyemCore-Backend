@@ -327,8 +327,29 @@ namespace OyemCore.BusinessLayer.Services
                     // Mail gönderimi (Talep Sahibine - IK Sevk Bilgilendirmesi)
                     if (!string.IsNullOrEmpty(request.KayitEposta))
                     {
-                        _ = _notificationService.SendMailAsync("OyemCore İzin", "İzin Talebi Süreç Güncellemesi", 
+                        _ = _notificationService.SendMailAsync("OyemCore İzin", "İzin Talebi Süreç Güncellemesi",
                             $"Merhaba,<br/><br/>{request.BelgeNo} nolu izin talebinizin amir onay süreci tamamlanmış olup, son onay için İnsan Kaynakları (IK) birimine sevk edilmiştir.<br/><b>Son Onaylayan:</b> {user.AdSoyad}<br/><br/>İyi çalışmalar dileriz.", request.KayitEposta);
+                    }
+
+                    // Mail gönderimi (IK/IZIN yetkili kullanıcılara — referans: WebPortal WebServiceIzinTalep
+                    // TalepBilgiMaili IslemTur=2, "IK" yetkili tüm kullanıcılara sevk bilgilendirmesi).
+                    // Push tarafı (NotifyLeaveManagerApprovalsCompletedAsync) bu listeyi zaten kullanıyor;
+                    // burada aynı yetki filtresiyle mail de gönderiliyor.
+                    var hrUsersForMail = _context.tb_Kullanici
+                        .AsNoTracking()
+                        .Where(u => u.AdminBelgeTur != null && (u.AdminBelgeTur.Contains("IZIN") || u.AdminBelgeTur.Contains("IK") || u.AdminBelgeTur.Contains("ADMIN")))
+                        .Where(u => u.SicilNo != request.KayitSicil && !string.IsNullOrEmpty(u.Eposta))
+                        .Select(u => u.Eposta)
+                        .Distinct()
+                        .ToList();
+                    if (hrUsersForMail.Count > 0)
+                    {
+                        var talepEdenAdSoyad = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == request.KayitSicil)?.AdSoyad ?? request.KayitSicil;
+                        foreach (var hrEposta in hrUsersForMail)
+                        {
+                            _ = _notificationService.SendMailAsync("OyemCore İzin", "IK Onayı Bekleyen İzin Talebi",
+                                $"Merhaba,<br/><br/>{request.BelgeNo} nolu izin talebi amir onaylarından geçerek İK onayınıza sunulmuştur.<br/><b>Talep Eden:</b> {talepEdenAdSoyad}<br/><br/>İyi çalışmalar dileriz.", hrEposta);
+                        }
                     }
                 }
                 else

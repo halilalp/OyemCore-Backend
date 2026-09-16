@@ -26,7 +26,12 @@ namespace OyemCore.BusinessLayer.Services
 
                 _logger.LogInformation($"Attempting LDAP login for user {username} on server {ldapServer}");
 
-                using (DirectoryEntry ldapConnection = new DirectoryEntry($"LDAP://{ldapServer}", username, password, AuthenticationTypes.Secure))
+                // WebPortal (IIS App Pool, domain'e katılmış kimlik) çıplak sAMAccountName ile bağlanabiliyor,
+                // ama bu servisi çalıştıran process domain'e katılmamış olabileceğinden NTLM/Kerberos
+                // negotiation'ın domain'i belirsiz bırakmaması için down-level "DOMAIN\username" formatı gerekiyor.
+                string adUser = $"{domain}\\{username}";
+
+                using (DirectoryEntry ldapConnection = new DirectoryEntry($"LDAP://{ldapServer}", adUser, password, AuthenticationTypes.Secure))
                 {
                     object nativeObject = ldapConnection.NativeObject;
 

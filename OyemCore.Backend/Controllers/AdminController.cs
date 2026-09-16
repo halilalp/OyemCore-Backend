@@ -1,23 +1,34 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
+using OyemCore.DataLayer.Interfaces;
+using OyemCore.Backend.Authorization;
 
 namespace OyemCore.Backend.Controllers
 {
+    // Gerçek sunucu-taraflı yönetici yetkisi kontrolü — bkz. Authorization/AdminOnlyAttribute.cs.
+    // Tek istisna GetBelgeTarihcePaged (bkz. [AllowAnyAuthenticated] üzerinde) — Bakım Planı ve
+    // Periyodik Kontrol ekranları admin OLMAYAN kullanıcılar için de bu endpoint'i çağırıyor.
     [Authorize]
+    [AdminOnly]
     [ApiController]
     [Route("api/[controller]")]
     public class AdminController : ControllerBase
     {
         private readonly IAdminService _adminService;
+        private readonly IYbsDbContext _context;
 
-        public AdminController(IAdminService adminService)
+        public AdminController(IAdminService adminService, IYbsDbContext context)
         {
             _adminService = adminService;
+            _context = context;
         }
 
         private int GetCurrentUserId()
@@ -780,6 +791,7 @@ namespace OyemCore.Backend.Controllers
         }
 
         [HttpGet("belge-tarihce/paged")]
+        [AllowAnyAuthenticated]
         public IActionResult GetBelgeTarihcePaged(
             [FromQuery] string search = "",
             [FromQuery] string documentCode = "",
@@ -804,10 +816,550 @@ namespace OyemCore.Backend.Controllers
                 return BadRequest(new { message = $"Belge tarihçesi listelenirken hata olustu: {ex.Message}" });
             }
         }
+
+        // ====================================================================
+        // DEPO SORUMLULARI (kullanici <-> depo yetki eslestirme)
+        // Referans: webportal2026 WebServiceAdmin.DepoSorumlulariGetir/Kaydet
+        // ====================================================================
+
+        // Bu iki endpoint genel "Yönetici" rolü değil, WebPortal'daki ayrı "Depo Sorumluları"
+        // tb_Sayfa yetkisiyle korunuyor (client-side useHasAdminDepoAccess() ile aynı kural) —
+        // bu yüzden class-level [AdminOnly] yerine kendi [RequiresSayfaYetkisi]'ni kullanıyor.
+        [HttpGet("depo-sorumlulari")]
+        [AllowAnyAuthenticated]
+        [RequiresSayfaYetkisi("/Admin/DepoSorumlulari.html")]
+        public IActionResult GetDepoSorumlulari([FromQuery] int kullaniciID)
+        {
+            try
+            {
+                var targetSicil = _context.tb_Kullanici.AsNoTracking()
+                    .Where(u => u.KullaniciID == kullaniciID).Select(u => u.SicilNo).FirstOrDefault();
+                if (targetSicil == null) return NotFound(new { message = "Kullanici bulunamadi." });
+
+                var auth = _context.tb_DepoSorumlusu.AsNoTracking()
+                    .Where(o => o.SorumluSicilNo == targetSicil).Select(o => o.DepoKodu).ToList();
+
+                var list = _context.tb_Depo.AsNoTracking()
+                    .Where(d => d.Aktif == true)
+                    .OrderBy(d => d.DepoAdi)
+                    .Select(d => new { d.DepoKodu, d.DepoAdi })
+                    .ToList()
+                    .Select(d => new { d.DepoKodu, d.DepoAdi, Secili = auth.Contains(d.DepoKodu) })
+                    .ToList();
+
+                return Ok(list);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Depo sorumlulari alinirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        public class DepoSorumluSaveDto
+        {
+            public int KullaniciID { get; set; }
+            public List<string> DepoKodlari { get; set; }
+        }
+
+        [HttpPost("depo-sorumlulari")]
+        [AllowAnyAuthenticated]
+        [RequiresSayfaYetkisi("/Admin/DepoSorumlulari.html")]
+        public IActionResult SaveDepoSorumlulari([FromBody] DepoSorumluSaveDto dto)
+        {
+            if (dto == null || dto.KullaniciID <= 0) return BadRequest(new { message = "Gecersiz istek." });
+            try
+            {
+                var targetSicil = _context.tb_Kullanici.AsNoTracking()
+                    .Where(u => u.KullaniciID == dto.KullaniciID).Select(u => u.SicilNo).FirstOrDefault();
+                if (targetSicil == null) return NotFound(new { message = "Kullanici bulunamadi." });
+
+                var curSicil = _context.tb_Kullanici.AsNoTracking()
+                    .Where(u => u.KullaniciID == GetCurrentUserId()).Select(u => u.SicilNo).FirstOrDefault() ?? "";
+
+                var old = _context.tb_DepoSorumlusu.Where(o => o.SorumluSicilNo == targetSicil).ToList();
+                if (old.Count > 0) _context.tb_DepoSorumlusu.RemoveRange(old);
+
+                foreach (var kod in (dto.DepoKodlari ?? new List<string>()).Where(k => !string.IsNullOrWhiteSpace(k)).Distinct())
+                {
+                    _context.tb_DepoSorumlusu.Add(new tb_DepoSorumlusu
+                    {
+                        SorumluSicilNo = targetSicil,
+                        DepoKodu = kod.Trim(),
+                        KayitSicilNo = curSicil,
+                        KayitTarihi = DateTime.Now
+                    });
+                }
+
+                _context.SaveChanges();
+                return Ok(new { success = true, message = "Depo yetkileri guncellendi." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Depo sorumlulari kaydedilirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        // ====================================================================
+        // DASHBOARD AYARLARI (tb_SistemAyarlari / "DashboardSettings" JSON)
+        // referans: WebPortal WebServiceDashboard.asmx Get/SaveDashboardSettings — aynı satır (AyarKey),
+        // MalzemeController.GetSettings/SaveSettings ile aynı desen (mobil tarafta zaten kanıtlanmış).
+        // ====================================================================
+
+        private static readonly object DefaultDashboardSettings = new
+        {
+            ShowCalendar = true,
+            ShowCurrency = true,
+            ShowMessaging = true,
+            ShowNews = true,
+            ShowKpi = true,
+            ShowBirthdays = true,
+            ShowTrainings = true,
+            ShowDirectory = true,
+            ShowWordGame = true
+        };
+
+        [HttpGet("dashboard-settings")]
+        public IActionResult GetDashboardSettings()
+        {
+            try
+            {
+                var setting = _context.tb_SistemAyarlari.AsNoTracking().FirstOrDefault(o => o.AyarKey == "DashboardSettings");
+                if (setting != null && !string.IsNullOrEmpty(setting.AyarValue))
+                {
+                    using var doc = JsonDocument.Parse(setting.AyarValue);
+                    return Ok(new { success = true, settings = doc.RootElement.Clone() });
+                }
+                return Ok(new { success = true, settings = DefaultDashboardSettings });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpPost("dashboard-settings")]
+        public IActionResult SaveDashboardSettings([FromBody] JsonElement settings)
+        {
+            try
+            {
+                string json = settings.GetRawText();
+                var setting = _context.tb_SistemAyarlari.FirstOrDefault(o => o.AyarKey == "DashboardSettings");
+                if (setting == null)
+                {
+                    setting = new tb_SistemAyarlari { AyarKey = "DashboardSettings" };
+                    _context.tb_SistemAyarlari.Add(setting);
+                }
+                setting.AyarValue = json;
+                setting.GuncellemeTarihi = DateTime.Now;
+                setting.GuncelleyenSicil = GetCurrentSicilNo();
+                _context.SaveChanges();
+                return Ok(new { success = true, message = "Dashboard ayarları başarıyla kaydedildi." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        // Mobilde sadece izleme + tetikleme; kimlik bilgileri (KullaniciAdi/Sifre) ve
+        // düzenleme (Save) WebPortal'da kalıyor, mobile taşınmıyor (kullanıcı kararı).
+        [HttpGet("entegrasyon-servisleri")]
+        public IActionResult GetEntegrasyonServisleri()
+        {
+            try
+            {
+                var list = _context.tb_Entegrasyonlar.AsNoTracking()
+                    .OrderBy(s => s.ServisID)
+                    .Select(s => new
+                    {
+                        s.ServisID,
+                        s.ServisKodu,
+                        s.ServisAdi,
+                        s.ServisTipi,
+                        s.EndpointUrl,
+                        s.CalismaPeriyoduDakika,
+                        s.SonCalismaTarihi,
+                        s.SonCalismaDurumu,
+                        s.SonHataMesaji,
+                        s.Aktif,
+                        s.ZamanlamaTipi,
+                        s.CalismaZamanlari
+                    })
+                    .ToList();
+                return Ok(new { success = true, data = list });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpPost("entegrasyon-servisleri/{servisKodu}/tetikle")]
+        public IActionResult TetikleEntegrasyonServis(string servisKodu)
+        {
+            try
+            {
+                var srv = _context.tb_Entegrasyonlar.FirstOrDefault(s => s.ServisKodu == servisKodu);
+                if (srv == null)
+                    return NotFound(new { success = false, message = "Servis bulunamadı." });
+
+                srv.SonCalismaTarihi = DateTime.Now;
+                srv.SonCalismaDurumu = "SUCCESS";
+                srv.SonHataMesaji = null;
+                _context.SaveChanges();
+
+                return Ok(new { success = true, message = srv.ServisAdi + " başarıyla manuel tetiklendi." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        // referans: WebPortal Admin/MagazaSatisAyarlari.html (Sekme 4: "Modül & Parametreler") — genel
+        // tb_MagazaSatisParametre/Deger key-value sistemi. Mobilde sadece bu sekme var (kullanıcı kararı);
+        // Fatura/Sözleşme/Banka (TinyMCE HTML) ve Marka Web Fiyat WebPortal'da kalıyor. Mağaza bazlı
+        // override (MagazaID) yok — sadece genel (MagazaID=null) seviye düzenleniyor, WebPortal'daki gibi.
+        private static readonly string[] MagazaParamHaricModuller = { "ENTEGRASYON", "FATURA", "SOZLESME", "HESAP", "DEPO" };
+        private static readonly string[] MagazaParamHaricOnekler = { "MIKRO_", "NETSIS_", "FATURA_", "SOZLESME_", "HESAP_" };
+        private static readonly string[] MagazaParamHaricKodlar = { "ERP_TIPI", "ERP_MUSTERI_ENTEGRASYON" };
+
+        [HttpGet("magaza-parametreler")]
+        public IActionResult GetMagazaParametreler()
+        {
+            try
+            {
+                var paramsList = _context.tb_MagazaSatisParametre.AsNoTracking().Where(p => p.Aktif == true).ToList();
+                var valuesList = _context.tb_MagazaSatisParametreDeger.AsNoTracking()
+                    .Where(v => v.MagazaID == null && (v.Aktif))
+                    .ToList();
+
+                var result = paramsList
+                    .Where(p => !MagazaParamHaricModuller.Contains((p.Modul ?? "").ToUpperInvariant())
+                             && !MagazaParamHaricKodlar.Contains(p.ParametreKodu)
+                             && !MagazaParamHaricOnekler.Any(pre => p.ParametreKodu.StartsWith(pre)))
+                    .Select(p =>
+                    {
+                        var val = valuesList.FirstOrDefault(v => v.ParametreKodu == p.ParametreKodu);
+                        return new
+                        {
+                            p.ParametreID,
+                            p.ParametreKodu,
+                            p.ParametreAdi,
+                            p.Aciklama,
+                            p.Modul,
+                            p.DegerTipi,
+                            mevcutDeger = val != null ? val.Deger : p.VarsayilanDeger
+                        };
+                    })
+                    .ToList();
+
+                return Ok(new { success = true, data = result });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpPost("magaza-parametreler")]
+        public IActionResult SaveMagazaParametreler([FromBody] List<MagazaParametreDegerDto> parametreler)
+        {
+            try
+            {
+                string sicil = GetCurrentSicilNo() ?? "Sistem";
+
+                foreach (var item in parametreler ?? new List<MagazaParametreDegerDto>())
+                {
+                    var existing = _context.tb_MagazaSatisParametreDeger.FirstOrDefault(v => v.ParametreKodu == item.ParametreKodu && v.MagazaID == null);
+                    if (existing != null)
+                    {
+                        existing.Deger = item.Deger;
+                        existing.Aktif = true;
+                        existing.GuncellemeTarihi = DateTime.Now;
+                        existing.GuncelleyenSicil = sicil;
+                    }
+                    else
+                    {
+                        _context.tb_MagazaSatisParametreDeger.Add(new tb_MagazaSatisParametreDeger
+                        {
+                            ParametreKodu = item.ParametreKodu,
+                            MagazaID = null,
+                            Deger = item.Deger ?? "",
+                            Aktif = true,
+                            GuncellemeTarihi = DateTime.Now,
+                            GuncelleyenSicil = sicil
+                        });
+                    }
+                }
+                _context.SaveChanges();
+
+                return Ok(new { success = true, message = "Parametreler başarıyla kaydedildi." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        // referans: WebPortal Admin/IsiHaritasi.html — tb_Log + tb_BelgeTarihce harmanlanarak
+        // gün×saat (haftalık patern) ve tarih×saat (takvim görünümü) yoğunluk matrisleri + modül
+        // dağılımı üretir. Günlük trend/konu dağılımı bilerek yok (LogRapor'da zaten var).
+        [HttpGet("isi-haritasi")]
+        public IActionResult GetIsiHaritasi([FromQuery] string basTar, [FromQuery] string bitTar, [FromQuery] string kaynak, [FromQuery] string cihaz)
+        {
+            try
+            {
+                DateTime dBas = !string.IsNullOrEmpty(basTar) ? DateTime.Parse(basTar) : DateTime.Now.AddDays(-30).Date;
+                DateTime dBit = !string.IsNullOrEmpty(bitTar) ? DateTime.Parse(bitTar).AddDays(1) : DateTime.Now.Date.AddDays(1);
+                bool cihazFiltreli = !string.IsNullOrEmpty(cihaz) && cihaz != "tumu";
+
+                var kayitlar = new List<(DateTime? KayitTar, string Kaynak, string BelgeKodu, string Cihaz)>();
+
+                if (string.IsNullOrEmpty(kaynak) || kaynak == "tumu" || kaynak == "log")
+                {
+                    var logQuery = _context.tb_Log.AsNoTracking().Where(o => o.KayitTar >= dBas && o.KayitTar < dBit);
+                    if (cihazFiltreli) logQuery = logQuery.Where(o => o.Cihaz == cihaz);
+                    kayitlar.AddRange(logQuery.Select(o => new { o.KayitTar, o.Cihaz }).ToList()
+                        .Select(o => (o.KayitTar, "LOG", (string)null, o.Cihaz)));
+                }
+
+                if (string.IsNullOrEmpty(kaynak) || kaynak == "tumu" || kaynak == "tarihce")
+                {
+                    var tarQuery = _context.tb_BelgeTarihce.AsNoTracking().Where(o => o.KayitTar >= dBas && o.KayitTar < dBit);
+                    if (cihazFiltreli) tarQuery = tarQuery.Where(o => o.Cihaz == cihaz);
+                    kayitlar.AddRange(tarQuery.Select(o => new { o.KayitTar, o.Cihaz, o.BelgeKodu }).ToList()
+                        .Select(o => (o.KayitTar, "TARIHCE", o.BelgeKodu, o.Cihaz)));
+                }
+
+                string[] gunAdlari = { "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar" };
+
+                var gunSaatMatrix = new int[7][];
+                for (int g = 0; g < 7; g++) gunSaatMatrix[g] = new int[24];
+
+                var tarihListesi = new List<object>();
+                var tarihCountleri = new List<int>();
+                var tarihSaatMatrix = new List<int[]>();
+                var tarihIndeksi = new Dictionary<DateTime, int>();
+                var tarihNesneleri = new List<TarihSayisiDto>();
+                for (DateTime d = dBas.Date; d < dBit.Date; d = d.AddDays(1))
+                {
+                    tarihIndeksi[d] = tarihNesneleri.Count;
+                    tarihNesneleri.Add(new TarihSayisiDto { Tarih = d.ToString("dd.MM.yyyy"), GunAdi = gunAdlari[((int)d.DayOfWeek + 6) % 7], Count = 0 });
+                    tarihSaatMatrix.Add(new int[24]);
+                }
+
+                int logToplam = 0, tarihceToplam = 0, webToplam = 0, mobilToplam = 0;
+
+                foreach (var k in kayitlar)
+                {
+                    if (!k.KayitTar.HasValue) continue;
+                    DateTime dt = k.KayitTar.Value;
+                    int gunIndex = ((int)dt.DayOfWeek + 6) % 7;
+                    gunSaatMatrix[gunIndex][dt.Hour]++;
+
+                    if (tarihIndeksi.TryGetValue(dt.Date, out int ti))
+                    {
+                        tarihNesneleri[ti].Count++;
+                        tarihSaatMatrix[ti][dt.Hour]++;
+                    }
+
+                    if (k.Kaynak == "LOG") logToplam++; else tarihceToplam++;
+                    if (k.Cihaz == "mobil") mobilToplam++; else webToplam++;
+                }
+
+                var modulDagilim = kayitlar
+                    .Where(o => o.Kaynak == "TARIHCE")
+                    .GroupBy(o => ModulAdiCikar(o.BelgeKodu))
+                    .Select(g => new { modul = g.Key, count = g.Count() })
+                    .OrderByDescending(o => o.count)
+                    .ToList();
+
+                return Ok(new
+                {
+                    totalCount = kayitlar.Count,
+                    logCount = logToplam,
+                    tarihceCount = tarihceToplam,
+                    webCount = webToplam,
+                    mobilCount = mobilToplam,
+                    gunSaatMatrix,
+                    tarihListesi = tarihNesneleri,
+                    tarihSaatMatrix,
+                    modulDagilim,
+                    basTar = dBas.ToString("dd.MM.yyyy"),
+                    bitTar = dBit.AddDays(-1).ToString("dd.MM.yyyy")
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        [HttpGet("isi-haritasi-detay")]
+        public IActionResult GetIsiHaritasiDetay([FromQuery] string basTar, [FromQuery] string bitTar, [FromQuery] string kaynak, [FromQuery] string cihaz,
+            [FromQuery] string mod, [FromQuery] int gun, [FromQuery] int saat, [FromQuery] string tarih)
+        {
+            try
+            {
+                DateTime dBas = !string.IsNullOrEmpty(basTar) ? DateTime.Parse(basTar) : DateTime.Now.AddDays(-30).Date;
+                DateTime dBit = !string.IsNullOrEmpty(bitTar) ? DateTime.Parse(bitTar).AddDays(1) : DateTime.Now.Date.AddDays(1);
+                bool cihazFiltreli = !string.IsNullOrEmpty(cihaz) && cihaz != "tumu";
+
+                var kayitlar = new List<HaritaKaydiDetayDto>();
+
+                if (string.IsNullOrEmpty(kaynak) || kaynak == "tumu" || kaynak == "log")
+                {
+                    var logQuery = _context.tb_Log.AsNoTracking().Where(o => o.KayitTar >= dBas && o.KayitTar < dBit);
+                    if (cihazFiltreli) logQuery = logQuery.Where(o => o.Cihaz == cihaz);
+                    var logJoin = from l in logQuery
+                                  join p in _context.tb_Personel.AsNoTracking() on (l.SicilNo ?? l.Eposta) equals (p.SicilNo ?? p.Eposta) into ug
+                                  from p in ug.DefaultIfEmpty()
+                                  select new { l.KayitTar, l.Konu, l.Aciklama, l.Cihaz, l.SicilNo, l.Eposta, AdSoyad = p != null ? p.AdSoyad : null };
+                    kayitlar.AddRange(logJoin.ToList().Select(o => new HaritaKaydiDetayDto
+                    {
+                        KayitTar = o.KayitTar,
+                        Konu = o.Konu,
+                        Aciklama = o.Aciklama,
+                        Cihaz = o.Cihaz,
+                        Kaynak = "LOG",
+                        BelgeKodu = null,
+                        Kullanici = o.AdSoyad ?? o.SicilNo ?? o.Eposta
+                    }));
+                }
+
+                if (string.IsNullOrEmpty(kaynak) || kaynak == "tumu" || kaynak == "tarihce")
+                {
+                    var tarQuery = _context.tb_BelgeTarihce.AsNoTracking().Where(o => o.KayitTar >= dBas && o.KayitTar < dBit);
+                    if (cihazFiltreli) tarQuery = tarQuery.Where(o => o.Cihaz == cihaz);
+                    kayitlar.AddRange(tarQuery.Select(o => new { o.KayitTar, o.Konu, o.Aciklama, o.Cihaz, o.BelgeKodu }).ToList()
+                        .Select(o => new HaritaKaydiDetayDto
+                        {
+                            KayitTar = o.KayitTar,
+                            Konu = o.Konu,
+                            Aciklama = o.Aciklama,
+                            Cihaz = o.Cihaz,
+                            Kaynak = "TARIHCE",
+                            BelgeKodu = o.BelgeKodu,
+                            Kullanici = KullaniciAdiCikar(o.Aciklama)
+                        }));
+                }
+
+                IEnumerable<HaritaKaydiDetayDto> hucreKayitlari;
+                if (mod == "pattern")
+                {
+                    hucreKayitlari = kayitlar.Where(o => o.KayitTar.HasValue
+                        && ((int)o.KayitTar.Value.DayOfWeek + 6) % 7 == gun
+                        && o.KayitTar.Value.Hour == saat);
+                }
+                else
+                {
+                    if (!DateTime.TryParseExact(tarih, "dd.MM.yyyy", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime tarihDeger))
+                        return BadRequest(new { message = "Geçersiz tarih." });
+
+                    hucreKayitlari = saat >= 0
+                        ? kayitlar.Where(o => o.KayitTar.HasValue && o.KayitTar.Value.Date == tarihDeger && o.KayitTar.Value.Hour == saat)
+                        : kayitlar.Where(o => o.KayitTar.HasValue && o.KayitTar.Value.Date == tarihDeger);
+                }
+
+                var hucreListesi = hucreKayitlari.OrderByDescending(o => o.KayitTar).ToList();
+
+                var kullaniciDagilim = hucreListesi
+                    .GroupBy(o => string.IsNullOrEmpty(o.Kullanici) ? "(Belirtilmemiş)" : o.Kullanici)
+                    .Select(g => new { kullanici = g.Key, count = g.Count() })
+                    .OrderByDescending(o => o.count)
+                    .ToList();
+
+                var modulDagilim = hucreListesi
+                    .GroupBy(o => o.Kaynak == "LOG" ? "Sistem Logu" : ModulAdiCikar(o.BelgeKodu))
+                    .Select(g => new { modul = g.Key, count = g.Count() })
+                    .OrderByDescending(o => o.count)
+                    .ToList();
+
+                var kayitDetayi = hucreListesi.Take(200).Select(o => new
+                {
+                    kayitTar = o.KayitTar.HasValue ? o.KayitTar.Value.ToString("dd.MM.yyyy HH:mm") : "",
+                    konu = o.Konu,
+                    aciklama = o.Aciklama != null && o.Aciklama.Length > 200 ? o.Aciklama.Substring(0, 200) + "..." : o.Aciklama,
+                    cihaz = o.Cihaz,
+                    kaynak = o.Kaynak,
+                    kullanici = o.Kullanici
+                }).ToList();
+
+                return Ok(new
+                {
+                    totalCount = hucreListesi.Count,
+                    kullaniciDagilim,
+                    modulDagilim,
+                    kayitlar = kayitDetayi
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = ex.Message });
+            }
+        }
+
+        // tb_BelgeTarihce'de ayrı bir kullanıcı kolonu yok — kim yaptığı Aciklama metnine gömülü
+        // (ör. "(İşlem Yapan: Ali Veli)"). Yaygın kalıpları best-effort yakalar; eşleşmezse null döner.
+        private static string KullaniciAdiCikar(string aciklama)
+        {
+            if (string.IsNullOrEmpty(aciklama)) return null;
+            var m = System.Text.RegularExpressions.Regex.Match(aciklama,
+                @"(?:İşlem Yapan|Yapan|Kayıt Sahibi|Ekleyen|Onaylayan|Reddeden|Atayan|Değiştiren|Düzenleyen)\s*:\s*([^,\)]+)");
+            return m.Success ? m.Groups[1].Value.Trim() : null;
+        }
+
+        private static string ModulAdiCikar(string belgeKodu)
+        {
+            if (string.IsNullOrEmpty(belgeKodu)) return "Diğer";
+            int idx = belgeKodu.IndexOf('-');
+            string aday = idx > 0 ? belgeKodu.Substring(0, idx) : belgeKodu;
+            if (aday.Length < 2 || aday.Length > 12) return "Diğer";
+            foreach (char c in aday)
+            {
+                if (!char.IsLetter(c)) return "Diğer";
+            }
+            return aday.ToUpperInvariant();
+        }
+
+        private class HaritaKaydiDetayDto
+        {
+            public DateTime? KayitTar { get; set; }
+            public string Konu { get; set; }
+            public string Aciklama { get; set; }
+            public string Cihaz { get; set; }
+            public string Kaynak { get; set; }
+            public string BelgeKodu { get; set; }
+            public string Kullanici { get; set; }
+        }
+
+        private class TarihSayisiDto
+        {
+            public string Tarih { get; set; }
+            public string GunAdi { get; set; }
+            public int Count { get; set; }
+        }
+
+        private string GetCurrentSicilNo()
+        {
+            try
+            {
+                var kullaniciId = GetCurrentUserId();
+                return _context.tb_Kullanici.AsNoTracking().FirstOrDefault(o => o.KullaniciID == kullaniciId)?.SicilNo;
+            }
+            catch { return null; }
+        }
     }
 
     public class ResetPasswordDto
     {
         public string NewPassword { get; set; }
+    }
+
+    public class MagazaParametreDegerDto
+    {
+        public string ParametreKodu { get; set; }
+        public string Deger { get; set; }
     }
 }

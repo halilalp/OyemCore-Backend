@@ -74,6 +74,7 @@ namespace OyemCore.DataLayer.Contexts
         public DbSet<tb_AygitKategori> tb_AygitKategori { get; set; }
         public DbSet<tb_Marka> tb_Marka { get; set; }
         public DbSet<tb_AygitPersonel> tb_AygitPersonel { get; set; }
+        public DbSet<tb_BakimPlanTemizlikOnay> tb_BakimPlanTemizlikOnay { get; set; }
         public DbSet<tb_Tedarikci> tb_Tedarikci { get; set; }
         public DbSet<tb_TedDeg> tb_TedDeg { get; set; }
         public DbSet<tb_TedDegKalitePuan> tb_TedDegKalitePuan { get; set; }
@@ -86,16 +87,55 @@ namespace OyemCore.DataLayer.Contexts
         public DbSet<tb_SayimAygit> tb_SayimAygit { get; set; }
         public DbSet<viewSayimAygit> viewSayimAygit { get; set; }
         public DbSet<tb_UserDevices> tb_UserDevices { get; set; }
+        public DbSet<tb_AkademiEgitim> tb_AkademiEgitim { get; set; }
+        public DbSet<tb_AkademiAtama> tb_AkademiAtama { get; set; }
+        public DbSet<tb_AkademiIlerleme> tb_AkademiIlerleme { get; set; }
+        public DbSet<tb_AkademiKategori> tb_AkademiKategori { get; set; }
+        public DbSet<tb_AkademiSoru> tb_AkademiSoru { get; set; }
+        public DbSet<tb_AkademiSinavOturum> tb_AkademiSinavOturum { get; set; }
+        public DbSet<tb_AkademiSinavSonuc> tb_AkademiSinavSonuc { get; set; }
         public DbSet<tb_Notification> tb_Notification { get; set; }
         public DbSet<tb_Chat> tb_Chat { get; set; }
         public DbSet<tb_ChatGroup> tb_ChatGroup { get; set; }
         public DbSet<tb_ChatGroupMember> tb_ChatGroupMember { get; set; }
+        public DbSet<tb_GameScore> tb_GameScore { get; set; }
+        public DbSet<tb_GameWord> tb_GameWord { get; set; }
+        public DbSet<tb_GameWordPool> tb_GameWordPool { get; set; }
+        public DbSet<tb_Anket> tb_Anket { get; set; }
+        public DbSet<tb_AnketSoru> tb_AnketSoru { get; set; }
+        public DbSet<tb_AnketSoruSecenek> tb_AnketSoruSecenek { get; set; }
+        public DbSet<tb_AnketSonuc> tb_AnketSonuc { get; set; }
+        public DbSet<tb_AnketPersonel> tb_AnketPersonel { get; set; }
         public DbSet<tb_MagazaAvans> tb_MagazaAvans { get; set; }
         public DbSet<tb_MagazaMasraf> tb_MagazaMasraf { get; set; }
         public DbSet<tb_MagazaMasrafDetay> tb_MagazaMasrafDetay { get; set; }
         public DbSet<tb_Bordro> tb_Bordro { get; set; }
         public DbSet<tb_Mail> tb_Mail { get; set; }
         public DbSet<tb_Ayarlar> tb_Ayarlar { get; set; }
+        // Malzeme & Stok yonetimi (mobil gecis)
+        public DbSet<tb_MalzemeGrubu> tb_MalzemeGrubu { get; set; }
+        public DbSet<tb_Birim> tb_Birim { get; set; }
+        public DbSet<tb_MalzemeTip> tb_MalzemeTip { get; set; }
+        public DbSet<tb_MalzemeTedarikciKodu> tb_MalzemeTedarikciKodu { get; set; }
+        public DbSet<tb_MalzemeOzellikTanim> tb_MalzemeOzellikTanim { get; set; }
+        public DbSet<tb_MalzemeHareket> tb_MalzemeHareket { get; set; }
+        // Stok yonetimi (mobil gecis - Faz 2)
+        public DbSet<tb_Depo> tb_Depo { get; set; }
+        public DbSet<tb_MalzemeHareketTip> tb_MalzemeHareketTip { get; set; }
+        public DbSet<tb_MalzemeFis> tb_MalzemeFis { get; set; }
+        public DbSet<tb_DepoMalzeme> tb_DepoMalzeme { get; set; }
+        public DbSet<tb_MalzemeLot> tb_MalzemeLot { get; set; }
+        public DbSet<tb_MalzemeLotAnaliz> tb_MalzemeLotAnaliz { get; set; }
+        public DbSet<tb_DepoSorumlusu> tb_DepoSorumlusu { get; set; }
+        public DbSet<tb_SistemAyarlari> tb_SistemAyarlari { get; set; }
+        public DbSet<tb_Entegrasyonlar> tb_Entegrasyonlar { get; set; }
+        public DbSet<tb_MagazaSatisParametre> tb_MagazaSatisParametre { get; set; }
+        public DbSet<tb_MagazaSatisParametreDeger> tb_MagazaSatisParametreDeger { get; set; }
+        public DbSet<tb_Koleksiyon> tb_Koleksiyon { get; set; }
+        // SKU / Varyant (urun ozellikleri)
+        public DbSet<tb_MalzemeOzellikDeger> tb_MalzemeOzellikDeger { get; set; }
+        public DbSet<tb_MalzemeOzellik> tb_MalzemeOzellik { get; set; }
+        public DbSet<tb_MalzemeSKU> tb_MalzemeSKU { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -107,6 +147,14 @@ namespace OyemCore.DataLayer.Contexts
             modelBuilder.Entity<tb_Chat>().ToTable("tb_Chat").HasKey(e => e.ID);
             modelBuilder.Entity<tb_ChatGroup>().ToTable("tb_ChatGroup").HasKey(e => e.ID);
             modelBuilder.Entity<tb_ChatGroupMember>().ToTable("tb_ChatGroupMember").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_GameScore>().ToTable("tb_GameScore").HasKey(e => e.Id);
+            modelBuilder.Entity<tb_GameWord>().ToTable("tb_GameWord").HasKey(e => e.Id);
+            modelBuilder.Entity<tb_GameWordPool>().ToTable("tb_GameWordPool").HasKey(e => e.Id);
+            modelBuilder.Entity<tb_Anket>().ToTable("tb_Anket").HasKey(e => e.AnketID);
+            modelBuilder.Entity<tb_AnketSoru>().ToTable("tb_AnketSoru").HasKey(e => e.AnketSoruID);
+            modelBuilder.Entity<tb_AnketSoruSecenek>().ToTable("tb_AnketSoruSecenek").HasKey(e => e.AnketSecenekID);
+            modelBuilder.Entity<tb_AnketSonuc>().ToTable("tb_AnketSonuc").HasKey(e => e.AnketSonucID);
+            modelBuilder.Entity<tb_AnketPersonel>().ToTable("tb_AnketPersonel").HasKey(e => new { e.AnketID, e.SicilNo });
             modelBuilder.Entity<tb_MagazaAvans>().ToTable("tb_MagazaAvans").HasKey(e => e.AvansID);
             modelBuilder.Entity<tb_MagazaMasraf>().ToTable("tb_MagazaMasraf").HasKey(e => e.MasrafID);
             modelBuilder.Entity<tb_MagazaMasrafDetay>().ToTable("tb_MagazaMasrafDetay").HasKey(e => e.DetayID);
@@ -138,6 +186,13 @@ namespace OyemCore.DataLayer.Contexts
             modelBuilder.Entity<tb_Hiyerarsi>().ToTable("tb_Hiyerarsi").HasKey(e => e.HiyerarsiID);
             modelBuilder.Entity<tb_Haber>().ToTable("tb_Haber").HasKey(e => e.HaberID);
             modelBuilder.Entity<tb_Egitim>().ToTable("tb_Egitim").HasKey(e => e.EgitimID);
+            modelBuilder.Entity<tb_AkademiEgitim>().ToTable("tb_AkademiEgitim").HasKey(e => e.AkademiEgitimID);
+            modelBuilder.Entity<tb_AkademiAtama>().ToTable("tb_AkademiAtama").HasKey(e => e.AtamaID);
+            modelBuilder.Entity<tb_AkademiIlerleme>().ToTable("tb_AkademiIlerleme").HasKey(e => e.IlerlemeID);
+            modelBuilder.Entity<tb_AkademiKategori>().ToTable("tb_AkademiKategori").HasKey(e => e.KategoriID);
+            modelBuilder.Entity<tb_AkademiSoru>().ToTable("tb_AkademiSoru").HasKey(e => e.SoruID);
+            modelBuilder.Entity<tb_AkademiSinavOturum>().ToTable("tb_AkademiSinavOturum").HasKey(e => e.OturumID);
+            modelBuilder.Entity<tb_AkademiSinavSonuc>().ToTable("tb_AkademiSinavSonuc").HasKey(e => e.SonucID);
             modelBuilder.Entity<tb_EgitimKategori>().ToTable("tb_EgitimKategori").HasKey(e => e.KategoriID);
             modelBuilder.Entity<tb_Departman>().ToTable("tb_Departman").HasKey(e => e.Kod);
             modelBuilder.Entity<tb_Unvan>().ToTable("tb_Unvan").HasKey(e => e.UnvanKodu);
@@ -157,6 +212,7 @@ namespace OyemCore.DataLayer.Contexts
             modelBuilder.Entity<tb_AygitKategori>().ToTable("tb_AygitKategori").HasKey(e => e.AygitKategoriID);
             modelBuilder.Entity<tb_Marka>().ToTable("tb_Marka").HasKey(e => e.MarkaID);
             modelBuilder.Entity<tb_AygitPersonel>().ToTable("tb_AygitPersonel").HasKey(e => e.AygitPersonelID);
+            modelBuilder.Entity<tb_BakimPlanTemizlikOnay>().ToTable("tb_BakimPlanTemizlikOnay").HasKey(e => e.OnayID);
             modelBuilder.Entity<tb_Tedarikci>().ToTable("tb_Tedarikci").HasKey(e => e.TedarikciKodu);
             modelBuilder.Entity<tb_TedDeg>().ToTable("tb_TedDeg").HasKey(e => e.TedDegID);
             modelBuilder.Entity<tb_TedDegKalitePuan>().ToTable("tb_TedDegKalitePuan").HasKey(e => new { e.BelgeNo, e.PKod });
@@ -171,6 +227,31 @@ namespace OyemCore.DataLayer.Contexts
             modelBuilder.Entity<tb_Bordro>().ToTable("tb_Bordro").HasKey(e => e.BordroID);
             modelBuilder.Entity<tb_Mail>().ToTable("tb_Mail").HasKey(e => e.MailID);
             modelBuilder.Entity<tb_Ayarlar>().ToTable("tb_Ayarlar").HasKey(e => e.ID);
+
+            // Malzeme & Stok yonetimi (mobil gecis)
+            modelBuilder.Entity<tb_MalzemeGrubu>().ToTable("tb_MalzemeGrubu").HasKey(e => e.GrupKodu);
+            modelBuilder.Entity<tb_Birim>().ToTable("tb_Birim").HasKey(e => e.BirimId);
+            modelBuilder.Entity<tb_MalzemeTip>().ToTable("tb_MalzemeTip").HasKey(e => e.MalzemeTipKodu);
+            modelBuilder.Entity<tb_MalzemeTedarikciKodu>().ToTable("tb_MalzemeTedarikciKodu").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_MalzemeOzellikTanim>().ToTable("tb_MalzemeOzellikTanim").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_MalzemeHareket>().ToTable("tb_MalzemeHareket").HasKey(e => e.ID);
+
+            // Stok yonetimi (mobil gecis - Faz 2)
+            modelBuilder.Entity<tb_Depo>().ToTable("tb_Depo").HasKey(e => e.DepoKodu);
+            modelBuilder.Entity<tb_MalzemeHareketTip>().ToTable("tb_MalzemeHareketTip").HasKey(e => e.HareketTipKodu);
+            modelBuilder.Entity<tb_MalzemeFis>().ToTable("tb_MalzemeFis").HasKey(e => e.FisID);
+            modelBuilder.Entity<tb_DepoMalzeme>().ToTable("tb_DepoMalzeme").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_MalzemeLot>().ToTable("tb_MalzemeLot").HasKey(e => e.Id);
+            modelBuilder.Entity<tb_MalzemeLotAnaliz>().ToTable("tb_MalzemeLotAnaliz").HasKey(e => new { e.LotNo, e.AnalizID });
+            modelBuilder.Entity<tb_DepoSorumlusu>().ToTable("tb_DepoSorumlusu").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_SistemAyarlari>().ToTable("tb_SistemAyarlari").HasKey(e => e.AyarKey);
+            modelBuilder.Entity<tb_Entegrasyonlar>().ToTable("tb_Entegrasyonlar").HasKey(e => e.ServisID);
+            modelBuilder.Entity<tb_MagazaSatisParametre>().ToTable("tb_MagazaSatisParametre").HasKey(e => e.ParametreID);
+            modelBuilder.Entity<tb_MagazaSatisParametreDeger>().ToTable("tb_MagazaSatisParametreDeger").HasKey(e => e.DegerID);
+            modelBuilder.Entity<tb_Koleksiyon>().ToTable("tb_Koleksiyon").HasKey(e => e.KoleksiyonKodu);
+            modelBuilder.Entity<tb_MalzemeOzellikDeger>().ToTable("tb_MalzemeOzellikDeger").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_MalzemeOzellik>().ToTable("tb_MalzemeOzellik").HasKey(e => e.ID);
+            modelBuilder.Entity<tb_MalzemeSKU>().ToTable("tb_MalzemeSKU").HasKey(e => e.ID);
         }
     }
 }

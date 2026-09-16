@@ -14,11 +14,25 @@ namespace OyemCore.BusinessLayer.Services
     {
         private readonly IYbsDbContext _context;
         private readonly ILogger<BakimService> _logger;
+        private readonly INotificationService _notificationService;
+        private readonly ITemizlikOnayService _temizlikOnayService;
 
-        public BakimService(IYbsDbContext context, ILogger<BakimService> logger)
+        public BakimService(IYbsDbContext context, ILogger<BakimService> logger, INotificationService notificationService, ITemizlikOnayService temizlikOnayService)
         {
             _context = context;
             _logger = logger;
+            _notificationService = notificationService;
+            _temizlikOnayService = temizlikOnayService;
+        }
+
+        private string GetUserEmailBySicil(string sicilNo)
+        {
+            if (string.IsNullOrEmpty(sicilNo)) return null;
+            return _context.tb_Kullanici
+                .AsNoTracking()
+                .Where(u => u.SicilNo == sicilNo && !string.IsNullOrEmpty(u.Eposta))
+                .Select(u => u.Eposta)
+                .FirstOrDefault();
         }
 
         public IEnumerable<MakineDto> GetMakines(string sirketKodu, string bolumKodu, string aramaText)
@@ -208,25 +222,40 @@ namespace OyemCore.BusinessLayer.Services
             }
         }
 
-        public bool UpdateBakimPlanStatus(string planKodu, string durum, string note, string dosyaUrl, string sicil)
+        public bool UpdateBakimPlanStatus(string planKodu, string durum, string note, string dosyaUrl, string sicil, string secilenSicil = null)
         {
             var plan = _context.tb_BakimPlan
                 .FirstOrDefault(p => p.PlanKodu == planKodu);
 
             if (plan == null) return false;
 
-            plan.Durum = durum;
+            bool isTamamlaniyor = durum == "TAMAMLANDI";
+
             if (durum == "DEVAM" && plan.BaslamaTar == null)
             {
+                plan.Durum = durum;
                 plan.BaslamaTar = DateTime.Now;
             }
-            else if (durum == "TAMAMLANDI")
+            else if (isTamamlaniyor)
             {
+                // İşlem fiilen bitti ama süreç kapanmadı: seçilen personel temizlik onay
+                // formunu dolduruna kadar durum ONAY'da bekler. Gerçek TAMAMLANDI'ya geçiş
+                // TemizlikOnayService.Kaydet içinde yapılır (referans WebServiceBakimPlani.BakimIslemGuncelle).
+                plan.Durum = "ONAY";
                 plan.BitisTar = DateTime.Now;
                 plan.IslemSicil = sicil;
             }
+            else
+            {
+                plan.Durum = durum;
+            }
 
             _context.SaveChanges();
+
+            if (isTamamlaniyor)
+            {
+                _temizlikOnayService.CreateOnayKaydi("BAKIM", planKodu, sicil, secilenSicil);
+            }
 
             var tarihce = new tb_BelgeTarihce
             {
@@ -238,6 +267,18 @@ namespace OyemCore.BusinessLayer.Services
             };
             _context.tb_BelgeTarihce.Add(tarihce);
             _context.SaveChanges();
+
+            // Mail gönderimi (Planı Kaydeden Kişiye)
+            if (!string.IsNullOrEmpty(plan.KayitSicil))
+            {
+                var ownerEposta = GetUserEmailBySicil(plan.KayitSicil);
+                if (!string.IsNullOrEmpty(ownerEposta))
+                {
+                    string islemYapanAd = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == sicil)?.AdSoyad ?? sicil;
+                    _ = _notificationService.SendMailAsync("OyemCore Bakım", $"{planKodu} Nolu Bakım Planı Güncellendi", 
+                        $"Merhaba,<br/><br/>{planKodu} nolu bakım planı durumu <b>{durum}</b> olarak güncellenmiştir.<br/><b>İşlem Yapan:</b> {islemYapanAd}<br/><b>Not:</b> {note}<br/><br/>İyi çalışmalar dileriz.", ownerEposta);
+                }
+            }
 
             return true;
         }
@@ -431,25 +472,40 @@ namespace OyemCore.BusinessLayer.Services
             }
         }
 
-        public bool UpdatePeriyodikStatus(string kontrolKodu, string status, string aciklama, string sicil)
+        public bool UpdatePeriyodikStatus(string kontrolKodu, string status, string aciklama, string sicil, string secilenSicil = null)
         {
             var plan = _context.tb_BakimPerKontrol
                 .FirstOrDefault(k => k.KontrolKodu == kontrolKodu);
 
             if (plan == null) return false;
 
-            plan.Durum = status;
+            bool isTamamlaniyor = status == "TAMAMLANDI";
+
             if (status == "DEVAM" && plan.BaslamaTar == null)
             {
+                plan.Durum = status;
                 plan.BaslamaTar = DateTime.Now;
                 plan.IslemSicil = sicil;
             }
-            else if (status == "TAMAMLANDI")
+            else if (isTamamlaniyor)
             {
+                // İşlem fiilen bitti ama süreç kapanmadı: seçilen personel temizlik onay
+                // formunu dolduruna kadar durum ONAY'da bekler. Gerçek TAMAMLANDI'ya geçiş
+                // TemizlikOnayService.Kaydet içinde yapılır (referans WebServiceBakimPeriyodik.PeriyodikKontrolTamamla).
+                plan.Durum = "ONAY";
                 plan.BitisTar = DateTime.Now;
+            }
+            else
+            {
+                plan.Durum = status;
             }
 
             _context.SaveChanges();
+
+            if (isTamamlaniyor)
+            {
+                _temizlikOnayService.CreateOnayKaydi("PERIYODIK", kontrolKodu, sicil, secilenSicil);
+            }
 
             var tarihce = new tb_BelgeTarihce
             {
@@ -461,6 +517,18 @@ namespace OyemCore.BusinessLayer.Services
             };
             _context.tb_BelgeTarihce.Add(tarihce);
             _context.SaveChanges();
+
+            // Mail gönderimi (Planı Kaydeden Kişiye)
+            if (!string.IsNullOrEmpty(plan.KayitSicil))
+            {
+                var ownerEposta = GetUserEmailBySicil(plan.KayitSicil);
+                if (!string.IsNullOrEmpty(ownerEposta))
+                {
+                    string islemYapanAd = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == sicil)?.AdSoyad ?? sicil;
+                    _ = _notificationService.SendMailAsync("OyemCore Bakım", $"{kontrolKodu} Nolu Periyodik Kontrol Güncellendi", 
+                        $"Merhaba,<br/><br/>{kontrolKodu} nolu periyodik kontrol durumu <b>{status}</b> olarak güncellenmiştir.<br/><b>İşlem Yapan:</b> {islemYapanAd}<br/><b>Açıklama/Not:</b> {aciklama}<br/><br/>İyi çalışmalar dileriz.", ownerEposta);
+                }
+            }
 
             return true;
         }

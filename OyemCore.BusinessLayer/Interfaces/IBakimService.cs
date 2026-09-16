@@ -10,14 +10,14 @@ namespace OyemCore.BusinessLayer.Interfaces
         bool SaveMakine(tb_Makine makine);
         (IEnumerable<BakimPlanDto> Data, int TotalCount) GetBakimPlanList(string sirket, string bolum, string hat, string durum, string bakimTuru, string arama, int pageIndex, int pageSize);
         string SaveBakimPlan(string planKodu, string hatKodu, string bakimTuru, string basTar, string bitTar, string sicil);
-        bool UpdateBakimPlanStatus(string planKodu, string durum, string note, string dosyaUrl, string sicil);
+        bool UpdateBakimPlanStatus(string planKodu, string durum, string note, string dosyaUrl, string sicil, string secilenSicil = null);
         IEnumerable<BakimPlanDetayDto> GetBakimNotlari(string planKodu);
         bool SavePlanGelisme(string planKodu, string aciklama, string dosyaUrl, string sicil);
         bool DeleteBakimPlan(string planKodu);
         bool DeleteBakimGelisme(int id);
         (IEnumerable<PeriyodikKontrolDto> Data, int TotalCount) GetPeriyodikKontrolList(string sirket, string bolum, string durum, string kontrolTuru, string arama, int pageIndex, int pageSize);
         string SavePeriyodikKontrol(string kontrolKodu, string bolumKodu, string kontrolTuru, string basTar, string bitTar, string aciklama, string sicil);
-        bool UpdatePeriyodikStatus(string kontrolKodu, string status, string aciklama, string sicil);
+        bool UpdatePeriyodikStatus(string kontrolKodu, string status, string aciklama, string sicil, string secilenSicil = null);
         bool DeletePeriyodikKontrol(string kontrolKodu);
         IEnumerable<PeriyodikSarfiyatDto> GetPeriyodikSarfiyats(string kontrolKodu);
         bool SavePeriyodikSarfiyat(string kontrolKodu, string malzemeKodu, decimal miktar, string makineKodu, string sicil);

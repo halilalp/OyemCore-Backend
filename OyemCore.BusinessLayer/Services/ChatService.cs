@@ -4,6 +4,7 @@ using System.Linq;
 using OyemCore.BusinessLayer.Dtos;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
+using OyemCore.DataLayer.Helpers;
 using OyemCore.DataLayer.Interfaces;
 
 namespace OyemCore.BusinessLayer.Services
@@ -57,44 +58,16 @@ namespace OyemCore.BusinessLayer.Services
 
             if (onlyActive)
             {
-                // 1. Departman grubu
-                var currentUser = _context.tb_Kullanici.FirstOrDefault(u => u.SicilNo == currentSicilNo);
-                if (currentUser != null && !string.IsNullOrEmpty(currentUser.DepartmanKod))
-                {
-                    string deptCode = currentUser.DepartmanKod;
-                    string deptName = _context.tb_Departman.Where(d => d.Kod == deptCode).Select(d => d.DepartmanAdi).FirstOrDefault() ?? deptCode;
-                    string deptGroupCode = "GROUP_DEP_" + deptCode;
-
-                    var lastDeptMsg = _context.tb_Chat
-                        .Where(m => m.AliciSicilNo == deptGroupCode)
-                        .OrderByDescending(m => m.GonderimTarihi).FirstOrDefault();
-
-                    var deptMemberRec = _context.tb_ChatGroupMember
-                        .FirstOrDefault(m => m.GroupCode == deptGroupCode && m.SicilNo == currentSicilNo);
-                    DateTime lastDeptRead = deptMemberRec?.SonOkumaTarihi ?? new DateTime(1900, 1, 1);
-
-                    int deptUnread = _context.tb_Chat
-                        .Count(m => m.AliciSicilNo == deptGroupCode && m.GonderenSicilNo != currentSicilNo && m.GonderimTarihi > lastDeptRead);
-
-                    list.Add(new UserChatDto
-                    {
-                        KullaniciID = 0,
-                        AdSoyad = deptName + " Grubu",
-                        Unvan = "Departman içi özel yazışma alanı.",
-                        SicilNo = deptGroupCode,
-                        Cinsiyet = "G",
-                        LastMessage = lastDeptMsg != null ? lastDeptMsg.MesajMetni : "Grup sohbeti başlatıldı.",
-                        LastMessageDate = lastDeptMsg?.GonderimTarihi,
-                        UnreadCount = deptUnread
-                    });
-                }
+                // 1. Departman grubu — otomatik gösterimi KALDIRILDI (kullanıcı isteği).
+                //    Referans WebServiceChat'te de bu blok "PASSED/REMOVED BY USER REQUEST" ile kaldırılmıştı.
+                //    GROUP_DEP_ sohbetleri hâlâ açılabilir/çalışır; sadece ilk açılış sidebar'ında listelenmez.
 
                 // 2. Özel gruplar
                 try
                 {
                     var customGroups = (from g in _context.tb_ChatGroup
                                         join m in _context.tb_ChatGroupMember on g.GroupCode equals m.GroupCode
-                                        where m.SicilNo == currentSicilNo
+                                        where m.SicilNo == currentSicilNo && m.Silindi == false && (g.Silindi == false || g.SilenSicilNo != currentSicilNo)
                                         select g).ToList();
 
                     foreach (var group in customGroups)
@@ -117,10 +90,11 @@ namespace OyemCore.BusinessLayer.Services
                             Unvan = "Özel Grup",
                             SicilNo = group.GroupCode,
                             Cinsiyet = "G",
-                            LastMessage = lastGrpMsg != null ? lastGrpMsg.MesajMetni : "Grup sohbeti başlatıldı.",
+                            LastMessage = lastGrpMsg != null ? ClsEncryption.Decrypt(lastGrpMsg.MesajMetni) : "Grup sohbeti başlatıldı.",
                             LastMessageDate = lastGrpMsg?.GonderimTarihi,
                             UnreadCount = grpUnread,
-                            OlusturanSicilNo = group.OlusturanSicilNo
+                            OlusturanSicilNo = group.OlusturanSicilNo,
+                            IsGroupDeleted = group.Silindi
                         });
                     }
                 }
@@ -137,12 +111,12 @@ namespace OyemCore.BusinessLayer.Services
                 string targetSicil = (k.SicilNo ?? "").Trim();
 
                 var lastMsg = _context.tb_Chat
-                    .Where(m => (m.GonderenSicilNo == currentSicilNo && m.AliciSicilNo == targetSicil) ||
-                                (m.GonderenSicilNo == targetSicil && m.AliciSicilNo == currentSicilNo))
+                    .Where(m => (m.GonderenSicilNo == currentSicilNo && m.AliciSicilNo == targetSicil && m.GonderenSilindi == false) ||
+                                (m.GonderenSicilNo == targetSicil && m.AliciSicilNo == currentSicilNo && m.AliciSilindi == false))
                     .OrderByDescending(m => m.GonderimTarihi).FirstOrDefault();
 
                 int unread = _context.tb_Chat
-                    .Count(m => m.GonderenSicilNo == targetSicil && m.AliciSicilNo == currentSicilNo && m.Okundu == false);
+                    .Count(m => m.GonderenSicilNo == targetSicil && m.AliciSicilNo == currentSicilNo && m.Okundu == false && m.AliciSilindi == false);
 
                 if (!onlyActive || lastMsg != null)
                 {
@@ -153,7 +127,7 @@ namespace OyemCore.BusinessLayer.Services
                         Unvan = k.Unvan,
                         SicilNo = targetSicil,
                         Cinsiyet = k.Cinsiyet?.ToString() ?? "",
-                        LastMessage = lastMsg != null ? lastMsg.MesajMetni : "",
+                        LastMessage = lastMsg != null ? ClsEncryption.Decrypt(lastMsg.MesajMetni) : "",
                         LastMessageDate = lastMsg?.GonderimTarihi,
                         UnreadCount = unread,
                         IsOnline = _dispatcher.IsOnline(targetSicil)
@@ -179,8 +153,8 @@ namespace OyemCore.BusinessLayer.Services
             bool isGroup = cleanTarget.ToUpper().StartsWith("GROUP_");
 
             var rawMessages = _context.tb_Chat
-                .Where(m => (m.GonderenSicilNo == currentSicilNo && m.AliciSicilNo == cleanTarget) ||
-                            (m.GonderenSicilNo == cleanTarget && m.AliciSicilNo == currentSicilNo) ||
+                .Where(m => (m.GonderenSicilNo == currentSicilNo && m.AliciSicilNo == cleanTarget && m.GonderenSilindi == false) ||
+                            (m.GonderenSicilNo == cleanTarget && m.AliciSicilNo == currentSicilNo && m.AliciSilindi == false) ||
                             (isGroup && m.AliciSicilNo == cleanTarget))
                 .OrderByDescending(m => m.GonderimTarihi)
                 .Skip(skip).Take(take).ToList();
@@ -240,7 +214,7 @@ namespace OyemCore.BusinessLayer.Services
                     m.GonderenSicilNo,
                     GonderenAdSoyad = senderName,
                     m.AliciSicilNo,
-                    m.MesajMetni,
+                    MesajMetni = ClsEncryption.Decrypt(m.MesajMetni),
                     m.DosyaAdi,
                     m.DosyaYolu,
                     m.DosyaTipi,
@@ -248,7 +222,7 @@ namespace OyemCore.BusinessLayer.Services
                     m.GonderimTarihi,
                     Okundu = isEveryoneRead,
                     m.ParentID,
-                    ParentMesajMetni = parent?.MesajMetni ?? "",
+                    ParentMesajMetni = ClsEncryption.Decrypt(parent?.MesajMetni ?? ""),
                     ParentGonderenAd = parentAd
                 };
             }).ToList();
@@ -261,7 +235,12 @@ namespace OyemCore.BusinessLayer.Services
                 var unreadMessages = _context.tb_Chat
                     .Where(m => m.GonderenSicilNo == cleanTarget && m.AliciSicilNo == currentSicilNo && m.Okundu == false).ToList();
                 foreach (var msg in unreadMessages) { msg.Okundu = true; msg.OkunmaTarihi = DateTime.Now; }
-                if (unreadMessages.Count > 0) _context.SaveChanges();
+                if (unreadMessages.Count > 0)
+                {
+                    _context.SaveChanges();
+                    // Karşı tarafın açık ekranına anlık okundu bilgisi (çift-tik) ilet — WebPortal ile aynı sözleşme.
+                    try { _dispatcher.SendToSicils(new[] { cleanTarget }, "messagesRead", currentSicilNo, currentSicilNo); } catch { }
+                }
             }
             else if (cleanTarget.ToUpper().StartsWith("GROUP_CUSTOM_") && skip == 0)
             {
@@ -286,7 +265,11 @@ namespace OyemCore.BusinessLayer.Services
                 var unreadMessages = _context.tb_Chat
                     .Where(m => m.GonderenSicilNo == cleanTarget && m.AliciSicilNo == currentSicilNo && m.Okundu == false).ToList();
                 foreach (var msg in unreadMessages) { msg.Okundu = true; msg.OkunmaTarihi = DateTime.Now; }
-                if (unreadMessages.Count > 0) _context.SaveChanges();
+                if (unreadMessages.Count > 0)
+                {
+                    _context.SaveChanges();
+                    try { _dispatcher.SendToSicils(new[] { cleanTarget }, "messagesRead", currentSicilNo, currentSicilNo); } catch { }
+                }
             }
             else
             {
@@ -350,7 +333,7 @@ namespace OyemCore.BusinessLayer.Services
                 data = new
                 {
                     ID = msg.ID,
-                    MesajMetni = msg.MesajMetni,
+                    MesajMetni = ClsEncryption.Decrypt(msg.MesajMetni),
                     GonderenAd = senderName,
                     GonderimTarihi = msg.GonderimTarihi.ToString("dd.MM.yyyy HH:mm"),
                     IsGroup = isGroup,
@@ -371,7 +354,7 @@ namespace OyemCore.BusinessLayer.Services
             {
                 GonderenSicilNo = currentSicilNo,
                 AliciSicilNo = cleanReceiver,
-                MesajMetni = mesajMetni,
+                MesajMetni = ClsEncryption.Encrypt(mesajMetni),  // at-rest şifreleme; web ile birebir uyumlu
                 GonderimTarihi = DateTime.Now,
                 Okundu = false,
                 ParentID = (parentID != null && parentID > 0) ? parentID : null
@@ -394,7 +377,7 @@ namespace OyemCore.BusinessLayer.Services
                 var p = _context.tb_Chat.FirstOrDefault(x => x.ID == yeni.ParentID.Value);
                 if (p != null)
                 {
-                    parentMetni = p.MesajMetni;
+                    parentMetni = ClsEncryption.Decrypt(p.MesajMetni);
                     parentGonderenAd = _context.tb_Kullanici.Where(u => u.SicilNo == p.GonderenSicilNo).Select(u => u.AdSoyad).FirstOrDefault() ?? "";
                 }
             }
@@ -430,12 +413,41 @@ namespace OyemCore.BusinessLayer.Services
             // Push: çevrimdışı (SignalR ile ulaşılamayan) alıcılara
             string shortBody = string.IsNullOrEmpty(mesajMetni) ? "Bir dosya gönderdi." : (mesajMetni.Length > 60 ? mesajMetni.Substring(0, 60) + "..." : mesajMetni);
             string pushTitle = isGroup ? (senderName + " (Grup)") : senderName;
+
+            // Bildirime dokununca doğrudan ilgili konuşma açılsın diye hedef bilgisi eklenir.
+            // 1:1 → alıcı, gönderenle (currentSicilNo) konuşmayı açar. Grup → grup kodu/adı.
+            string pushTargetSicil = isGroup ? cleanReceiver : currentSicilNo;
+            string pushTargetName = senderName;
+            if (isGroup)
+            {
+                string uc = cleanReceiver.ToUpper();
+                if (uc.StartsWith("GROUP_CUSTOM_"))
+                    pushTargetName = _context.tb_ChatGroup.Where(g => g.GroupCode == cleanReceiver).Select(g => g.GroupName).FirstOrDefault() ?? "Grup";
+                else if (uc.StartsWith("GROUP_DEP_"))
+                {
+                    string dc = cleanReceiver.Substring("GROUP_DEP_".Length);
+                    pushTargetName = (_context.tb_Departman.Where(d => d.Kod == dc).Select(d => d.DepartmanAdi).FirstOrDefault() ?? dc) + " Grubu";
+                }
+                else pushTargetName = "Grup";
+            }
+
             foreach (var r in recipients)
             {
                 string rc = (r ?? "").Trim();
                 if (string.IsNullOrEmpty(rc) || rc.Equals(currentSicilNo, StringComparison.OrdinalIgnoreCase)) continue;
-                if (_dispatcher.IsOnline(rc)) continue; // online kullanıcı realtime aldı
-                try { _ = _push.SendToUserBySicilNoAsync(rc, pushTitle, shortBody, new { screen = "Chat", gonderenSicilNo = currentSicilNo, groupCode = isGroup ? cleanReceiver : "" }); } catch { }
+                try
+                {
+                    _ = _push.SendToUserBySicilNoAsync(rc, pushTitle, shortBody, new
+                    {
+                        screen = "Chat",
+                        targetSicilNo = pushTargetSicil,
+                        targetName = pushTargetName,
+                        isGroup = isGroup,
+                        gonderenSicilNo = currentSicilNo,
+                        groupCode = isGroup ? cleanReceiver : ""
+                    });
+                }
+                catch { }
             }
 
             return new { success = true, ID = yeni.ID };
@@ -587,11 +599,15 @@ namespace OyemCore.BusinessLayer.Services
             if (string.IsNullOrEmpty(currentSicilNo)) return 0;
             string cleanCurrent = currentSicilNo.Trim();
 
-            int directUnread = _context.tb_Chat.Count(m => m.AliciSicilNo == cleanCurrent && m.GonderenSicilNo != cleanCurrent && m.Okundu == false);
+            // AliciSilindi: kullanıcı sohbeti kendi tarafında temizlediyse sayılmaz (ClearConversation).
+            int directUnread = _context.tb_Chat.Count(m => m.AliciSicilNo == cleanCurrent && m.GonderenSicilNo != cleanCurrent && m.Okundu == false && m.AliciSilindi == false);
 
+            // GetUsers'daki sidebar filtresiyle birebir aynı: kullanıcı gruptan ayrıldıysa (Silindi)
+            // ya da grubu kendi tarafında kapattıysa (g.Silindi + SilenSicilNo) artık sayılmaz —
+            // aksi halde artık göremediği bir grup için rozet sonsuza dek takılı kalıyordu.
             var customGroups = (from g in _context.tb_ChatGroup
                                 join m in _context.tb_ChatGroupMember on g.GroupCode equals m.GroupCode
-                                where m.SicilNo == cleanCurrent
+                                where m.SicilNo == cleanCurrent && m.Silindi == false && (g.Silindi == false || g.SilenSicilNo != cleanCurrent)
                                 select new { g.GroupCode, m.SonOkumaTarihi }).ToList();
 
             int groupUnread = 0;
@@ -601,6 +617,105 @@ namespace OyemCore.BusinessLayer.Services
                 groupUnread += _context.tb_Chat.Count(m => m.AliciSicilNo == group.GroupCode && m.GonderenSicilNo != cleanCurrent && m.GonderimTarihi > lastRead);
             }
             return directUnread + groupUnread;
+        }
+
+        // ── 13. Sohbeti temizle (tek taraflı sil) ──
+        // referans: WebServiceChat.ClearConversation. Karşı taraf mesajları görmeye devam eder;
+        // sadece isteği yapan kullanıcının kendi tarafından gizlenir (soft-delete).
+        public object ClearConversation(int kullaniciID, string targetSicilNo)
+        {
+            string currentSicilNo = GetCurrentSicilNo(kullaniciID);
+            if (string.IsNullOrEmpty(currentSicilNo)) return new { error = true, message = "SicilNo not resolved" };
+
+            try
+            {
+                string cleanTarget = (targetSicilNo ?? "").Trim();
+
+                // Bizim gönderdiğimiz mesajlarda GonderenSilindi = true
+                var mySent = _context.tb_Chat
+                    .Where(m => m.GonderenSicilNo == currentSicilNo && m.AliciSicilNo == cleanTarget).ToList();
+                foreach (var m in mySent) m.GonderenSilindi = true;
+
+                // Bize gelen mesajlarda AliciSilindi = true
+                var myReceived = _context.tb_Chat
+                    .Where(m => m.GonderenSicilNo == cleanTarget && m.AliciSicilNo == currentSicilNo).ToList();
+                foreach (var m in myReceived) m.AliciSilindi = true;
+
+                _context.SaveChanges();
+                return new { success = true };
+            }
+            catch (Exception ex)
+            {
+                return new { error = true, message = ex.Message };
+            }
+        }
+
+        // ── 14. Grubu sil / kapat ──
+        // referans: WebServiceChat.DeleteGroup. Kurucu → grubu kapatır (Silindi=true, herkese sistem logu).
+        // Üye → kendi listesinden siler (üyelik Silindi=true, "ayrıldı" sistem logu).
+        public object DeleteGroup(int kullaniciID, string groupCode)
+        {
+            string currentSicilNo = GetCurrentSicilNo(kullaniciID);
+            if (string.IsNullOrEmpty(currentSicilNo)) return new { error = true, message = "SicilNo not resolved" };
+
+            try
+            {
+                string cleanCode = (groupCode ?? "").Trim().ToUpper();
+
+                var group = _context.tb_ChatGroup.FirstOrDefault(g => g.GroupCode.ToUpper() == cleanCode);
+                if (group == null) return new { error = true, message = "Grup bulunamadı." };
+
+                bool isCreator = (group.OlusturanSicilNo ?? "").Trim().ToLower() == currentSicilNo.Trim().ToLower();
+                string currentUserName = _context.tb_Kullanici.Where(u => u.SicilNo == currentSicilNo).Select(u => u.AdSoyad).FirstOrDefault() ?? "Bir Üye";
+
+                string systemText;
+                if (isCreator)
+                {
+                    // Kurucu grubu kapattı
+                    group.Silindi = true;
+                    group.SilenSicilNo = currentSicilNo;
+                    systemText = "📢 Grup kurucu (" + currentUserName + ") tarafından kapatıldı. Yeni mesaj yazamazsınız.";
+                }
+                else
+                {
+                    // Üye kendi listesinden sildi (ayrıldı)
+                    var member = _context.tb_ChatGroupMember.FirstOrDefault(m => m.GroupCode.ToUpper() == cleanCode && m.SicilNo == currentSicilNo);
+                    if (member != null) member.Silindi = true;
+                    systemText = "🚪 " + currentUserName + " gruptan ayrıldı.";
+                }
+
+                _context.tb_Chat.Add(new tb_Chat
+                {
+                    GonderenSicilNo = currentSicilNo,
+                    AliciSicilNo = group.GroupCode,
+                    MesajMetni = ClsEncryption.Encrypt(systemText),
+                    GonderimTarihi = DateTime.Now,
+                    Okundu = false
+                });
+                _context.SaveChanges();
+
+                // Online grup üyelerine gerçek-zamanlı bildir: sistem mesajı + sidebar yenile
+                try
+                {
+                    var members = ResolveGroupMembers(group.GroupCode);
+                    _dispatcher.SendToSicils(members, "receiveMessage", new
+                    {
+                        GonderenSicilNo = currentSicilNo,
+                        AliciSicilNo = group.GroupCode,
+                        MesajMetni = systemText,
+                        Saat = DateTime.Now.ToString("HH:mm"),
+                        GonderenAdSoyad = "Sistem"
+                    });
+                    _dispatcher.SendToSicils(members, "reloadSidebar", group.GroupCode, false);
+                }
+                catch { }
+
+                return new { success = true };
+            }
+            catch (Exception ex)
+            {
+                return new { error = true, message = ex.Message };
+            }
         }
 
         // ── 12. Aktif bağlantılar ──

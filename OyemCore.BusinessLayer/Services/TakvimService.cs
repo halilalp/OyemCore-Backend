@@ -25,6 +25,8 @@ namespace OyemCore.BusinessLayer.Services
             var query = from t in _context.tb_Takvim
                         join a in _context.tb_TakvimAyar on t.AyarID equals a.AyarID into t_a
                         from a in t_a.DefaultIfEmpty()
+                        join p in _context.tb_Personel on t.KayitSicil equals p.SicilNo into t_p
+                        from p in t_p.DefaultIfEmpty()
                         where (!startDate.HasValue || t.BasTar >= startDate.Value) &&
                               (!endDate.HasValue || t.BasTar <= endDate.Value)
                         orderby t.BasTar descending
@@ -35,10 +37,12 @@ namespace OyemCore.BusinessLayer.Services
                             MasterID = t.MasterID,
                             Konu = t.Konu,
                             KayitSicil = t.KayitSicil,
+                            KayitAdSoyad = p != null ? p.AdSoyad : null,  // referans başlık: Konu + " (" + KayitSicil'in AdSoyad'ı + ")"
                             BasTar = t.BasTar,
                             BitTar = t.BitTar,
                             Katilimci = t.Katilimci,
                             Aciklama = t.Aciklama,
+                            KategoriAdi = a != null ? a.Konu : null,
                             BgColor = a != null ? a.BgColor : "#0F172A", // fallback color
                             BrColor = a != null ? a.BrColor : "#0F172A"
                         };

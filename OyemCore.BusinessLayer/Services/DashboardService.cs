@@ -232,7 +232,7 @@ namespace OyemCore.BusinessLayer.Services
                         join p in _context.tb_Proje on s.ProjeID equals p.ProjeID
                         where y.KullaniciID == userId
                            && p.Durum == true
-                           && s.MenudeGoster == true
+                           && (s.MenudeGoster == true || s.MobilGoster == true)
                            && s.Durum == true
                         orderby p.SiraNo, s.SiraNo
                         select new

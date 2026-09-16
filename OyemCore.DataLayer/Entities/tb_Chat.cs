@@ -17,5 +17,7 @@ namespace OyemCore.DataLayer.Entities
         public bool Okundu { get; set; }
         public DateTime? OkunmaTarihi { get; set; }
         public int? ParentID { get; set; }         // yanıtlanan mesaj
+        public bool GonderenSilindi { get; set; }  // gönderen konuşmayı temizledi → kendi tarafından gizle
+        public bool AliciSilindi { get; set; }     // alıcı konuşmayı temizledi → kendi tarafından gizle
     }
 }

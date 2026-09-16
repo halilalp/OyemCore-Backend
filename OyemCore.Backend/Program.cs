@@ -42,11 +42,14 @@ builder.Services.AddDbContext<YbsDbContext>((provider, options) =>
 builder.Services.AddScoped<IYbsDbContext>(provider => provider.GetRequiredService<YbsDbContext>());
 
 // Register Custom Business Services
+builder.Services.AddHttpClient<IFcmVoipPushService, FcmVoipPushService>();
+builder.Services.AddHttpClient<IApnsVoipPushService, ApnsVoipPushService>();
 builder.Services.AddHttpClient<IPushNotificationService, PushNotificationService>();
 builder.Services.AddScoped<ILdapService, LdapService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<ITicketService, TicketService>();
 builder.Services.AddScoped<IBakimService, BakimService>();
+builder.Services.AddScoped<ITemizlikOnayService, TemizlikOnayService>();
 builder.Services.AddScoped<IIzinService, IzinService>();
 builder.Services.AddScoped<ITalepService, TalepService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
@@ -56,21 +59,42 @@ builder.Services.AddScoped<IProjeToplantiService, ProjeToplantiService>();
 builder.Services.AddScoped<ITakvimService, TakvimService>();
 builder.Services.AddScoped<IHaberService, HaberService>();
 builder.Services.AddScoped<IEgitimService, EgitimService>();
+builder.Services.AddScoped<IAkademiService, AkademiService>();
 builder.Services.AddScoped<IBildirimService, BildirimService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddScoped<IAvansMasrafService, AvansMasrafService>();
 builder.Services.AddScoped<IBordroService, BordroService>();
 builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IGameService, GameService>();
+builder.Services.AddScoped<IAnketService, AnketService>();
+builder.Services.AddHttpClient<IDailyCallService, DailyCallService>();
 builder.Services.AddSingleton<IChatRealtimeDispatcher, OyemCore.Backend.Hubs.ChatRealtimeDispatcher>();
 
 // Configure CORS
 builder.Services.AddCors(options =>
     {
-        options.AddPolicy("AllowAll", policy =>
+        options.AddPolicy("CorsPolicy", policy =>
         {
-            policy.AllowAnyOrigin()
-                  .AllowAnyMethod()
-                  .AllowAnyHeader();
+            policy.SetIsOriginAllowed(origin =>
+            {
+                if (string.IsNullOrEmpty(origin)) return false;
+                try
+                {
+                    var uri = new Uri(origin);
+                    var host = uri.Host;
+                    return host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+                           host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase) ||
+                           host.EndsWith("oyemsoft.com", StringComparison.OrdinalIgnoreCase) ||
+                           host.EndsWith("isiktarim.com", StringComparison.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    return false;
+                }
+            })
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
         });
     });
 
@@ -153,7 +177,7 @@ if (app.Environment.IsDevelopment() || true) // Enable swagger in production/sta
 //     app.UseHttpsRedirection();
 // }
 
-app.UseCors("AllowAll");
+app.UseCors("CorsPolicy");
 
 app.UseStaticFiles();
 

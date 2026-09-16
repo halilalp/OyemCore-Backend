@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 using OyemCore.BusinessLayer.Interfaces;
 
 namespace OyemCore.Backend.Hubs
@@ -8,10 +9,12 @@ namespace OyemCore.Backend.Hubs
     public class ChatRealtimeDispatcher : IChatRealtimeDispatcher
     {
         private readonly IHubContext<ChatHub> _hub;
+        private readonly ILogger<ChatRealtimeDispatcher> _logger;
 
-        public ChatRealtimeDispatcher(IHubContext<ChatHub> hub)
+        public ChatRealtimeDispatcher(IHubContext<ChatHub> hub, ILogger<ChatRealtimeDispatcher> logger)
         {
             _hub = hub;
+            _logger = logger;
         }
 
         public void SendToSicils(IEnumerable<string> sicils, string method, params object[] args)
@@ -21,7 +24,15 @@ namespace OyemCore.Backend.Hubs
             {
                 foreach (var connId in ChatHub.ConnectionsFor(sicil))
                 {
-                    _hub.Clients.Client(connId).SendAsync(method, args);
+                    // SendAsync bilerek await edilmiyor (bu metod void — arayanları bloklamasın),
+                    // ama önceden Task'ı hiç gözlemlemiyorduk: bağlantı kopmuş/geçersiz olduğunda
+                    // atılan hata sessizce yutuluyor, hiçbir iz bırakmıyordu (ör. "messagesRead"
+                    // canlı bildirimi bazen ulaşmıyor şikayeti — kesin sebep buysa artık loglanacak).
+                    var task = _hub.Clients.Client(connId).SendAsync(method, args);
+                    task.ContinueWith(t =>
+                    {
+                        _logger.LogWarning(t.Exception, "ChatRealtimeDispatcher: SendAsync basarisiz. Method: {Method}, Sicil: {Sicil}, ConnId: {ConnId}", method, sicil, connId);
+                    }, System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
                 }
             }
         }

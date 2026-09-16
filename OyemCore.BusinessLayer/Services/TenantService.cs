@@ -60,7 +60,10 @@ namespace OyemCore.BusinessLayer.Services
                 var host = httpContext.Request.Host.Host;
                 if (!string.IsNullOrEmpty(host) && host != "localhost" && host != "127.0.0.1" && host != "10.0.2.2")
                 {
-                    var tenantByHost = _masterDbContext.Tenants.FirstOrDefault(t => t.ApiServer == host && t.IsActive);
+                    // ApiServer port içerebilir (örn. "isik-web.isiktarim.com:5003"), Request.Host.Host ise
+                    // portsuz gelir. Bu yüzden hem birebir hem de port öneki ("host:") eşleşmesini kontrol et.
+                    var tenantByHost = _masterDbContext.Tenants.FirstOrDefault(t => t.IsActive
+                        && (t.ApiServer == host || t.ApiServer.StartsWith(host + ":")));
                     if (tenantByHost != null)
                     {
                         tenantId = tenantByHost.TenantId;
@@ -78,96 +81,99 @@ namespace OyemCore.BusinessLayer.Services
 
         public string GetCurrentConnectionString()
         {
-            // 1. Prioritize local configuration from appsettings.json if defined
+            // 1. Multi-tenant istek: tenant çözümlenebiliyorsa VE kendi kaydı varsa önce onu kullan.
+            // appsettings.json'daki local config, tek-tenant/dev deploy senaryosu için yalnızca
+            // tenant çözümlenemediğinde (veya tenant'ın kendi kaydı boşsa) devreye giren bir
+            // fallback'tir — GetCurrentStorageFolder/GetModulPath ile aynı öncelik sırası.
+            var tenant = GetCurrentTenant();
+            if (tenant != null && !string.IsNullOrEmpty(tenant.ConnectionString))
+            {
+                string tenantKey = _configuration["Encryption:TenantKey"];
+                return SecurityHelper.DecryptString(tenant.ConnectionString, tenantKey);
+            }
+
+            // 2. Fallback to local configuration from appsettings.json if defined
             var localConnString = _configuration.GetConnectionString("YbsDB");
             if (!string.IsNullOrEmpty(localConnString))
             {
                 return localConnString;
             }
 
-            // 2. Fallback to dynamic tenant resolution from MasterDB
-            var tenant = GetCurrentTenant();
-            if (tenant == null || string.IsNullOrEmpty(tenant.ConnectionString))
-            {
-                return null;
-            }
-
-            string encryptionKey = _configuration["Encryption:TenantKey"];
-            return SecurityHelper.DecryptString(tenant.ConnectionString, encryptionKey);
+            return null;
         }
 
         public string GetCurrentMailConnectionString()
         {
-            // 1. Prioritize local configuration
+            // 1. Tenant kendi kaydına sahipse önce onu kullan (bkz. GetCurrentConnectionString).
+            var tenant = GetCurrentTenant();
+            if (tenant != null && !string.IsNullOrEmpty(tenant.MailConnectionString))
+            {
+                string tenantKey = _configuration["Encryption:TenantKey"];
+                return SecurityHelper.DecryptString(tenant.MailConnectionString, tenantKey);
+            }
+
+            // 2. Fallback to local configuration
             var localMailConn = _configuration.GetConnectionString("MailDB");
             if (!string.IsNullOrEmpty(localMailConn))
             {
                 return localMailConn;
             }
 
-            // 2. Fallback
-            var tenant = GetCurrentTenant();
-            if (tenant == null || string.IsNullOrEmpty(tenant.MailConnectionString))
-            {
-                return null;
-            }
-
-            string encryptionKey = _configuration["Encryption:TenantKey"];
-            return SecurityHelper.DecryptString(tenant.MailConnectionString, encryptionKey);
+            return null;
         }
 
         public string GetCurrentMeetingConnectionString()
         {
-            // 1. Prioritize local configuration
+            // 1. Tenant kendi kaydına sahipse önce onu kullan (bkz. GetCurrentConnectionString).
+            var tenant = GetCurrentTenant();
+            if (tenant != null && !string.IsNullOrEmpty(tenant.MeetingConnectionString))
+            {
+                string tenantKey = _configuration["Encryption:TenantKey"];
+                return SecurityHelper.DecryptString(tenant.MeetingConnectionString, tenantKey);
+            }
+
+            // 2. Fallback to local configuration
             var localMeetingConn = _configuration.GetConnectionString("MeetingDB");
             if (!string.IsNullOrEmpty(localMeetingConn))
             {
                 return localMeetingConn;
             }
 
-            // 2. Fallback
-            var tenant = GetCurrentTenant();
-            if (tenant == null || string.IsNullOrEmpty(tenant.MeetingConnectionString))
-            {
-                return null;
-            }
-
-            string encryptionKey = _configuration["Encryption:TenantKey"];
-            return SecurityHelper.DecryptString(tenant.MeetingConnectionString, encryptionKey);
+            return null;
         }
 
         public string GetCurrentLdapServer()
         {
-            // 1. Prioritize local configuration from appsettings.json if defined
+            // 1. Tenant kendi kaydına sahipse önce onu kullan (bkz. GetCurrentConnectionString).
+            var tenant = GetCurrentTenant();
+            if (tenant != null && !string.IsNullOrEmpty(tenant.LdapServer))
+            {
+                string tenantKey = _configuration["Encryption:TenantKey"];
+                return SecurityHelper.DecryptString(tenant.LdapServer, tenantKey);
+            }
+
+            // 2. Fallback to local configuration from appsettings.json if defined
             var localLdap = _configuration["Ldap:Server"];
             if (!string.IsNullOrEmpty(localLdap))
             {
                 return localLdap;
             }
 
-            // 2. Fallback to dynamic tenant resolution
-            var tenant = GetCurrentTenant();
-            if (tenant == null || string.IsNullOrEmpty(tenant.LdapServer))
-            {
-                return null;
-            }
-
-            string encryptionKey = _configuration["Encryption:TenantKey"];
-            return SecurityHelper.DecryptString(tenant.LdapServer, encryptionKey);
+            return null;
         }
 
         public string GetCurrentLdapDomain()
         {
-            // 1. Prioritize local configuration
-            var localDomain = _configuration["Ldap:Domain"];
-            if (!string.IsNullOrEmpty(localDomain))
+            // 1. Tenant kendi kaydına sahipse önce onu kullan (bkz. GetCurrentConnectionString).
+            var tenant = GetCurrentTenant();
+            if (tenant != null && !string.IsNullOrEmpty(tenant.LdapDomain))
             {
-                return localDomain;
+                return tenant.LdapDomain;
             }
 
-            // 2. Fallback
-            var tenant = GetCurrentTenant();
-            return tenant?.LdapDomain;
+            // 2. Fallback to local configuration
+            var localDomain = _configuration["Ldap:Domain"];
+            return !string.IsNullOrEmpty(localDomain) ? localDomain : null;
         }
 
         // Config-routing signal only — NOT a trust/authorization boundary. A spoofed value only
@@ -315,9 +321,15 @@ namespace OyemCore.BusinessLayer.Services
                 try
                 {
                     var modulPathsDict = System.Text.Json.JsonSerializer.Deserialize<System.Collections.Generic.Dictionary<string, string>>(tenant.ModulPaths);
-                    if (modulPathsDict != null && modulPathsDict.TryGetValue(modul, out var tenantPath))
+                    if (modulPathsDict != null)
                     {
-                        return tenantPath;
+                        // Modül adı yukarıda ToUpper edildi; JSON anahtarları karışık harfli olabilir
+                        // (ör. "HaberImg"). Bu yüzden harf duyarsız eşleştir.
+                        var ciDict = new System.Collections.Generic.Dictionary<string, string>(modulPathsDict, System.StringComparer.OrdinalIgnoreCase);
+                        if (ciDict.TryGetValue(modul, out var tenantPath))
+                        {
+                            return tenantPath;
+                        }
                     }
                 }
                 catch
@@ -369,6 +381,8 @@ namespace OyemCore.BusinessLayer.Services
                     return "DataYonetim/Docs";
                 case "HABERIMG":
                     return "DataYonetim/img";
+                case "AKADEMI":
+                    return "Akademi/Docs";
                 default:
                     return "HelpDesk/Docs";
             }

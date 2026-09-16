@@ -21,6 +21,14 @@ namespace OyemCore.Backend.Hubs
         public static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> Users =
             new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>(StringComparer.OrdinalIgnoreCase);
 
+        // roomUrl -> kabul edildi işareti. Aynı hesabın birden fazla bağlantısı (web'de birden fazla
+        // sekme/pencere, ya da web+mobil) neredeyse aynı anda "kabul et" derse, hepsi sunucudan onay
+        // beklemeden yerel olarak Daily odasına girmeye kalkışıyor ve tutarsız/takılı kalan durumlar
+        // oluşuyordu (bkz. kullanıcı raporu: bir pencere "bağlanıyor"da takılı kalıyor, diğeri "arama
+        // sonlandı" görüyor). Bu yüzden AcceptCall artık bool dönüyor — SADECE İLK çağrı true alır,
+        // kaybedenler hiç Daily odasına girmemeli.
+        private static readonly ConcurrentDictionary<string, byte> AcceptedRooms = new ConcurrentDictionary<string, byte>();
+
         private readonly IDailyCallService _daily;
         private readonly IPushNotificationService _push;
         private readonly IYbsDbContext _db;
@@ -102,16 +110,25 @@ namespace OyemCore.Backend.Hubs
             try
             {
                 _ = _push.SendToUserBySicilNoAsync(cleanTarget, gonderenAdSoyad, "📞 Görüntülü Arama Geliyor...",
-                    new { 
-                        screen = "IncomingCall", 
-                        type = "call", 
-                        callerSicilNo = cleanSender, 
-                        callerName = gonderenAdSoyad, 
-                        isGroup = false, 
-                        gonderenSicilNo = cleanSender, 
-                        roomUrl, 
-                        callType 
-                    });
+                    new {
+                        screen = "IncomingCall",
+                        type = "call",
+                        callerSicilNo = cleanSender,
+                        callerName = gonderenAdSoyad,
+                        isGroup = false,
+                        gonderenSicilNo = cleanSender,
+                        roomUrl,
+                        callType
+                    },
+                    channelId: "incoming_call_v2");
+            }
+            catch { }
+
+            // Android'de uygulama tamamen kapalıyken de native tam ekran arama arayüzünü açabilmek
+            // için ayrıca data-only FCM mesajı (Expo push'un YANINDA, onun yerine değil).
+            try
+            {
+                _ = _push.SendCallWakeAsync(cleanTarget, cleanSender, gonderenAdSoyad, roomUrl, callType, gonderenResim);
             }
             catch { }
 
@@ -121,18 +138,41 @@ namespace OyemCore.Backend.Hubs
         }
 
         // Aramayı kabul et: arayanın bağlantılarına callAccepted ilet.
+        // Aynı kullanıcının AYNI aramayı gösteren DİĞER bağlantılarına (ör. diğer PC/tarayıcı sekmeleri,
+        // aynı hesapla açık başka oturumlar) "callAnsweredElsewhere" gönderilir ki zil ekranını kapatıp
+        // aynı Daily odasına ikinci bir katılımcı olarak girmeye çalışmasınlar (çoklu-oturum bağlantı
+        // kilitlenmesi kök nedeni).
+        // Dönüş değeri true/false: istemci SADECE true dönerse Daily odasına girmeli — aksi halde
+        // (neredeyse eşzamanlı ikinci bir kabul denemesiyse) false döner ve istemci hiç katılmamalı.
         // referans: ChatHub.AcceptCall
-        public async Task AcceptCall(string callerSicilNo, string roomUrl)
+        public async Task<bool> AcceptCall(string callerSicilNo, string roomUrl)
         {
             string senderSicilNo = GetSicilNo();
-            if (string.IsNullOrEmpty(senderSicilNo) || string.IsNullOrEmpty(callerSicilNo)) return;
+            if (string.IsNullOrEmpty(senderSicilNo) || string.IsNullOrEmpty(callerSicilNo)) return false;
+
+            // Aynı arama (roomUrl) için sadece İLK AcceptCall kazanır.
+            if (!string.IsNullOrEmpty(roomUrl) && !AcceptedRooms.TryAdd(roomUrl, 0))
+            {
+                await Clients.Client(Context.ConnectionId).SendAsync("callAnsweredElsewhere", callerSicilNo.Trim());
+                return false;
+            }
 
             string cleanSender = senderSicilNo.Trim();
             foreach (var connId in ConnectionsFor(callerSicilNo.Trim()))
                 await Clients.Client(connId).SendAsync("callAccepted", cleanSender, roomUrl);
+
+            foreach (var connId in ConnectionsFor(cleanSender))
+            {
+                if (connId == Context.ConnectionId) continue;
+                await Clients.Client(connId).SendAsync("callAnsweredElsewhere", callerSicilNo.Trim());
+            }
+
+            return true;
         }
 
         // Aramayı reddet: arayanın bağlantılarına callRejected ilet.
+        // Aynı kullanıcının diğer bağlantılarına da zili kapatmaları için haber verilir (yukarıdaki
+        // AcceptCall'daki gerekçeyle aynı).
         // referans: ChatHub.RejectCall
         public async Task RejectCall(string callerSicilNo, string reason)
         {
@@ -142,6 +182,12 @@ namespace OyemCore.Backend.Hubs
             string cleanSender = senderSicilNo.Trim();
             foreach (var connId in ConnectionsFor(callerSicilNo.Trim()))
                 await Clients.Client(connId).SendAsync("callRejected", cleanSender, reason);
+
+            foreach (var connId in ConnectionsFor(cleanSender))
+            {
+                if (connId == Context.ConnectionId) continue;
+                await Clients.Client(connId).SendAsync("callAnsweredElsewhere", callerSicilNo.Trim());
+            }
         }
 
         // Aramayı sonlandır: karşı tarafın bağlantılarına callEnded ilet.
@@ -154,6 +200,45 @@ namespace OyemCore.Backend.Hubs
             string cleanSender = senderSicilNo.Trim();
             foreach (var connId in ConnectionsFor(targetSicilNo.Trim()))
                 await Clients.Client(connId).SendAsync("callEnded", cleanSender, roomUrl);
+
+            if (!string.IsNullOrEmpty(roomUrl)) AcceptedRooms.TryRemove(roomUrl, out _);
+        }
+
+        // İstemcilerin (Web/Mobil) SignalR üzerinden anlık mesaj gönderebilmesini sağlar.
+        public async Task SendMessage(string aliciSicilNo, string mesajMetni, object fileData, int? parentID, string parentMesajMetni, string parentGonderenAd, int? dbMessageID)
+        {
+            string senderSicilNo = GetSicilNo();
+            if (string.IsNullOrEmpty(senderSicilNo) || string.IsNullOrEmpty(aliciSicilNo)) return;
+
+            string cleanSender = senderSicilNo.Trim();
+            string cleanReceiver = aliciSicilNo.Trim();
+
+            string senderName = _db.tb_Kullanici
+                .Where(u => u.SicilNo == cleanSender)
+                .Select(u => u.AdSoyad)
+                .FirstOrDefault() ?? "Kullanıcı";
+
+            string timeStr = DateTime.Now.ToString("HH:mm");
+
+            // Mesajı hem alıcının hem de gönderenin tüm bağlantılarına 10 parametreli eski web portal formatında ilet
+            var targets = new List<string> { cleanReceiver, cleanSender };
+            foreach (var user in targets)
+            {
+                foreach (var connId in ConnectionsFor(user))
+                {
+                    await Clients.Client(connId).SendAsync("receiveMessage", 
+                        cleanSender, 
+                        cleanReceiver, 
+                        mesajMetni, 
+                        fileData, 
+                        timeStr, 
+                        senderName, 
+                        parentID, 
+                        parentMesajMetni, 
+                        parentGonderenAd, 
+                        dbMessageID);
+                }
+            }
         }
 
         // Bir sicile ait tüm bağlantı id'leri (dağıtım için).

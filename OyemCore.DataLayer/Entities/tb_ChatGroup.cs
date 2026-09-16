@@ -10,5 +10,7 @@ namespace OyemCore.DataLayer.Entities
         public string GroupName { get; set; }
         public string OlusturanSicilNo { get; set; }
         public DateTime KayitTarihi { get; set; }
+        public bool Silindi { get; set; }          // grup kurucu tarafından kapatıldı
+        public string SilenSicilNo { get; set; }   // grubu kapatan/silen kişi
     }
 }

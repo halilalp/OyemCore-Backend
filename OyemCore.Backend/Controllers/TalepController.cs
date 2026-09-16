@@ -8,6 +8,10 @@ using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
 using OyemCore.BusinessLayer.Dtos;
 
+using Microsoft.AspNetCore.SignalR;
+using OyemCore.Backend.Hubs;
+using System.Threading.Tasks;
+
 namespace OyemCore.Backend.Controllers
 {
     [Authorize]
@@ -18,12 +22,14 @@ namespace OyemCore.Backend.Controllers
         private readonly ITalepService _talepService;
         private readonly ITenantService _tenantService;
         private readonly IWebHostEnvironment _env;
+        private readonly IHubContext<ChatHub> _hubContext;
 
-        public TalepController(ITalepService talepService, ITenantService tenantService, IWebHostEnvironment env)
+        public TalepController(ITalepService talepService, ITenantService tenantService, IWebHostEnvironment env, IHubContext<ChatHub> hubContext)
         {
             _talepService = talepService;
             _tenantService = tenantService;
             _env = env;
+            _hubContext = hubContext;
         }
 
         private int GetCurrentUserId()
@@ -296,7 +302,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="dto">Talep ve bakim bilgilerini i?eren veri transfer nesnesi.</param>
         /// <returns>Kayit basarili ise olusturulan talep kodunu ve basari durumunu d?ner.</returns>
         [HttpPost]
-        public IActionResult SaveRequest([FromBody] SaveTalepRequestDto dto)
+        public async Task<IActionResult> SaveRequest([FromBody] SaveTalepRequestDto dto)
         {
             try
             {
@@ -306,6 +312,7 @@ namespace OyemCore.Backend.Controllers
                 }
                 int userId = GetCurrentUserId();
                 string code = _talepService.SaveRequest(userId, dto.Talep, dto.Bakim);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success = true, code, message = "Talep basariyla kaydedildi." });
             }
             catch (Exception ex)
@@ -321,7 +328,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Yeni durum bilgisini i?eren nesne.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("{id}/status")]
-        public IActionResult UpdateStatus(int id, [FromBody] UpdateTalepStatusRequest request)
+        public async Task<IActionResult> UpdateStatus(int id, [FromBody] UpdateTalepStatusRequest request)
         {
             try
             {
@@ -330,8 +337,9 @@ namespace OyemCore.Backend.Controllers
                     return BadRequest(new { message = "Geçersiz durum verisi." });
                 }
                 int userId = GetCurrentUserId();
-                bool success = _talepService.UpdateRequestStatus(userId, id, request.Status);
-                return Ok(new { success });
+                var result = _talepService.UpdateRequestStatus(userId, id, request.Status);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
+                return Ok(new { success = result.Success, pendingApproval = result.PendingApproval, pendingApprovalAdSoyad = result.PendingApprovalAdSoyad });
             }
             catch (Exception ex)
             {
@@ -346,7 +354,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Atanacak personelin sicil numarasini i?eren nesne.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("{id}/assign")]
-        public IActionResult Assign(int id, [FromBody] AssignTalepRequest request)
+        public async Task<IActionResult> Assign(int id, [FromBody] AssignTalepRequest request)
         {
             try
             {
@@ -356,6 +364,7 @@ namespace OyemCore.Backend.Controllers
                 }
                 int userId = GetCurrentUserId();
                 bool success = _talepService.AssignRequest(userId, id, request.SicilNo);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success });
             }
             catch (Exception ex)
@@ -371,7 +380,7 @@ namespace OyemCore.Backend.Controllers
         /// <param name="request">Eklenmek istenen a?iklama metnini i?eren nesne.</param>
         /// <returns>Islemin basari durumunu d?ner.</returns>
         [HttpPost("{id}/gelisme")]
-        public IActionResult AddGelisme(int id, [FromBody] AddGelismeRequest request)
+        public async Task<IActionResult> AddGelisme(int id, [FromBody] AddGelismeRequest request)
         {
             try
             {
@@ -381,6 +390,7 @@ namespace OyemCore.Backend.Controllers
                 }
                 int userId = GetCurrentUserId();
                 bool success = _talepService.AddRequestGelisme(userId, id, request.Aciklama, request.DosyaUrl);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success });
             }
             catch (Exception ex)
@@ -448,15 +458,17 @@ namespace OyemCore.Backend.Controllers
         /// <param name="tur">Talep t?r? (IT, ERP, BAKIM vb.).</param>
         /// <returns>Atanabilir personel listesini d?ner.</returns>
         [HttpGet("personels")]
-        public IActionResult GetPersonels([FromQuery] string tur)
+        public IActionResult GetPersonels([FromQuery] string tur, [FromQuery] int? kategoriId = null, [FromQuery] string sirketKodu = null)
         {
             try
             {
-                if (string.IsNullOrEmpty(tur))
+                if (string.IsNullOrEmpty(tur) && (!kategoriId.HasValue || kategoriId.Value <= 0))
                 {
-                    return BadRequest(new { message = "Talep türü belirtilmelidir." });
+                    return BadRequest(new { message = "Talep türü veya kategori belirtilmelidir." });
                 }
-                var list = _talepService.GetPersonels(tur);
+                // kategoriId + sirketKodu verilirse referans PersonelGetirKat (kategori+şirket bazlı);
+                // yoksa PersonelGetirTur (tür bazlı) mantığı çalışır.
+                var list = _talepService.GetPersonels(tur, kategoriId, sirketKodu);
                 return Ok(list);
             }
             catch (Exception ex)
@@ -466,12 +478,13 @@ namespace OyemCore.Backend.Controllers
         }
 
         [HttpPost("{talepKodu}/kontrol-kaydet")]
-        public IActionResult TalepKontrolKaydet(string talepKodu, [FromBody] TalepKontrolRequest request)
+        public async Task<IActionResult> TalepKontrolKaydet(string talepKodu, [FromBody] TalepKontrolRequest request)
         {
             try
             {
                 int userId = GetCurrentUserId();
                 bool result = _talepService.TalepKontrolKaydet(userId, talepKodu, request.EksikSomun, request.Yag, request.Miknatis, request.FazlaParca, request.Guvenlik, request.Makine, request.Temizlik, request.Gida);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success = result });
             }
             catch (Exception ex)
@@ -487,12 +500,13 @@ namespace OyemCore.Backend.Controllers
         }
 
         [HttpPost("{talepKodu}/is-emri-kaydet")]
-        public IActionResult IsEmriKaydet(string talepKodu, [FromBody] IsEmriKaydetRequest request)
+        public async Task<IActionResult> IsEmriKaydet(string talepKodu, [FromBody] IsEmriKaydetRequest request)
         {
             try
             {
                 int userId = GetCurrentUserId();
                 bool result = _talepService.IsEmriKaydet(userId, talepKodu, request.IsEmriTurID, request.TerminTar, request.Aciklama, request.DosyaUrl);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success = result });
             }
             catch (Exception ex)
@@ -502,12 +516,13 @@ namespace OyemCore.Backend.Controllers
         }
 
         [HttpPost("is-emri-kapat/{isEmriID}")]
-        public IActionResult IsEmriKapat(int isEmriID, [FromBody] IsEmriKapatRequest request)
+        public async Task<IActionResult> IsEmriKapat(int isEmriID, [FromBody] IsEmriKapatRequest request)
         {
             try
             {
                 int userId = GetCurrentUserId();
                 bool result = _talepService.IsEmriKapat(userId, isEmriID, request.Aciklama);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success = result });
             }
             catch (Exception ex)
@@ -517,12 +532,13 @@ namespace OyemCore.Backend.Controllers
         }
 
         [HttpPost("is-emri-aksiyon/{isEmriID}")]
-        public IActionResult IsEmriAksiyonGonder(int isEmriID, [FromBody] IsEmriAksiyonRequest request)
+        public async Task<IActionResult> IsEmriAksiyonGonder(int isEmriID, [FromBody] IsEmriAksiyonRequest request)
         {
             try
             {
                 int userId = GetCurrentUserId();
                 bool result = _talepService.IsEmriAksiyonGonder(userId, isEmriID, request.Sicil);
+                await _hubContext.Clients.All.SendAsync("helpDeskChanged");
                 return Ok(new { success = result });
             }
             catch (Exception ex)

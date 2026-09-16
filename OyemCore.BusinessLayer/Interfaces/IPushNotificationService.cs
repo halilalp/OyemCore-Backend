@@ -4,8 +4,16 @@ namespace OyemCore.BusinessLayer.Interfaces
 {
     public interface IPushNotificationService
     {
-        Task SendToUserBySicilNoAsync(string sicilNo, string title, string body, object data = null);
-        Task SendToUserByKullaniciIdAsync(int kullaniciId, string title, string body, object data = null);
+        // channelId: Android'de hangi bildirim kanalının kullanılacağını belirler (App.tsx'te
+        // setNotificationChannelAsync ile önceden oluşturulmuş olmalı — örn. gelen arama için
+        // "incoming_call", farklı bir zil sesi/titreşim kadansı taşır). null ise "default" kanal kullanılır.
+        Task SendToUserBySicilNoAsync(string sicilNo, string title, string body, object data = null, string channelId = null);
+        Task SendToUserByKullaniciIdAsync(int kullaniciId, string title, string body, object data = null, string channelId = null);
+
+        // Android'de native tam ekran gelen arama arayüzünü uygulama kapalıyken de uyandırmak için
+        // (tb_UserDevices'ta DeviceType="FcmVoip" olan cihazlara) data-only FCM mesajı gönderir.
+        // Expo push'un (yukarıdaki iki metod) YANINDA, ek bir yol — onu değiştirmez.
+        Task SendCallWakeAsync(string sicilNo, string callerSicilNo, string callerName, string roomUrl, string callType, string callerImage);
 
         // Leave Requests (Izin Talep)
         Task NotifyNewLeaveRequestAsync(int leaveRequestId);
@@ -32,6 +40,13 @@ namespace OyemCore.BusinessLayer.Interfaces
         // Asset/Zimmet Operations
         Task NotifyAssetAssignedAsync(int aygitPersonelId);
         Task NotifyAssetReturnedAsync(int aygitPersonelId, int actionUserId);
+        Task NotifyAssetRemovedAsync(string personelSicil, int aygitId, string actionUserAdSoyad);
+        Task NotifyAssetFaultReportedAsync(string adminSicilNo, int aygitId, string reporterAdSoyad, string description);
+
+        // Bakım Planı / Periyodik Kontrol Planı - Temizlik Onay Formu
+        Task NotifyTemizlikOnayCreatedAsync(int onayId);
+        Task NotifyTemizlikOnayCompletedAsync(int onayId);
+        Task NotifyTemizlikOnayRejectedAsync(int onayId);
 
         // Ticketing (Ticket)
         Task NotifyNewTicketAsync(int ticketId);

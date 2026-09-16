@@ -168,6 +168,29 @@ namespace OyemCore.Backend.Controllers
         }
 
         /// <summary>
+        /// Native tam ekran gelen arama (CallKit/ConnectionService) uyandırma token'ını kaydeder.
+        /// SavePushToken'dan (Expo push) ayrı bir uç nokta — bkz. AuthService.SaveVoipToken.
+        /// </summary>
+        [Authorize]
+        [HttpPost("voip-token")]
+        public IActionResult SaveVoipToken([FromBody] VoipTokenRequest request)
+        {
+            if (request == null || string.IsNullOrEmpty(request.Token) || string.IsNullOrEmpty(request.DeviceType))
+            {
+                return BadRequest(new { message = "Token ve deviceType bos olamaz." });
+            }
+
+            var claim = User.FindFirst(ClaimTypes.NameIdentifier);
+            if (claim != null && int.TryParse(claim.Value, out int userId))
+            {
+                _authService.SaveVoipToken(userId, request.Token, request.DeviceType);
+                return Ok(new { success = true, message = "Voip token kaydedildi." });
+            }
+
+            return Unauthorized();
+        }
+
+        /// <summary>
         /// Giris yapmis olan kullanicinin mobil bildirim (push notification) token bilgisini temizler.
         /// </summary>
         /// <returns>Islemin basari durumunu d?ner.</returns>
@@ -289,6 +312,13 @@ namespace OyemCore.Backend.Controllers
     public class PushTokenRequest
     {
         public string Token { get; set; }
+    }
+
+    public class VoipTokenRequest
+    {
+        public string Token { get; set; }
+        // "FcmVoip" (Android) / "ApnsVoipSandbox" / "ApnsVoipProduction" (iOS)
+        public string DeviceType { get; set; }
     }
 
     public class AvatarUploadRequest

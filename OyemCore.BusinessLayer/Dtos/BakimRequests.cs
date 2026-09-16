@@ -17,6 +17,8 @@ namespace OyemCore.BusinessLayer.Dtos
         public string Durum { get; set; }
         public string Not { get; set; }
         public string DosyaUrl { get; set; }
+        // Durum=TAMAMLANDI gönderildiğinde temizlik onay formunu dolduracak personel (referans BakimIslemGuncelle SecilenSicil).
+        public string SecilenSicil { get; set; }
     }
 
     public class SavePeriyodikRequest
@@ -33,6 +35,8 @@ namespace OyemCore.BusinessLayer.Dtos
     {
         public string Durum { get; set; }
         public string Aciklama { get; set; }
+        // Durum=TAMAMLANDI gönderildiğinde temizlik onay formunu dolduracak personel (referans PeriyodikKontrolTamamla SecilenSicil).
+        public string SecilenSicil { get; set; }
     }
 
     public class SaveSarfiyatRequest

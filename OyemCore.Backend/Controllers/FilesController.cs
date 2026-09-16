@@ -71,6 +71,20 @@ namespace OyemCore.Backend.Controllers
                     return BadRequest("relativePath veya module + fileName parametreleri gereklidir.");
                 }
 
+                // Legacy chat uyumu: referans (Chat/UploadHandler.ashx) chat dosyalarını
+                // "~/Chat/Docs/<sicil>/<dosya>" altına kaydeder ama DosyaYolu'nu "/Chat/" sayfasına
+                // göreli olarak ("Docs/<sicil>/<dosya>", "Chat/" öneki olmadan) saklar. Web bunu doğru
+                // çözer; API ise storageFolder (web kökü) altında arar ve bulamaz. Dosya kökte yoksa
+                // "Chat/" öneğiyle tekrar dene.
+                if (!string.IsNullOrEmpty(relativePath) && !System.IO.File.Exists(fullPath))
+                {
+                    var chatFallbackPath = Path.Combine(storageFolder, "Chat", relativePath);
+                    if (System.IO.File.Exists(chatFallbackPath))
+                    {
+                        fullPath = chatFallbackPath;
+                    }
+                }
+
                 // Security check
                 if (!Path.GetFullPath(fullPath).StartsWith(Path.GetFullPath(storageFolder), System.StringComparison.OrdinalIgnoreCase))
                 {

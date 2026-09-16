@@ -454,7 +454,8 @@ namespace OyemCore.Backend.Controllers
                                     Aciklama = $"Eski Deger: {eskiDeger} - Yeni Deger: {deger} (Islem Yapan: {currentUser.AdSoyad})",
                                     BelgeKodu = model.BelgeNo,
                                     KayitTar = DateTime.Now,
-                                    Konu = $"{kod} Kodlu Parametre Degeri Degisti. [Mobil]"
+                                    Konu = $"{kod} Kodlu Parametre Degeri Degisti. [Mobil]",
+                                    Cihaz = "mobil"
                                 });
                                 kp.IslemTar = DateTime.Now;
                                 kp.IslemYapan = currentUser.SicilNo;
@@ -482,7 +483,8 @@ namespace OyemCore.Backend.Controllers
                                     Aciklama = $"Eski Deger: {eskiDeger} - Yeni Deger: [Bos] (Islem Yapan: {currentUser.AdSoyad})",
                                     BelgeKodu = model.BelgeNo,
                                     KayitTar = DateTime.Now,
-                                    Konu = $"{kod} Kodlu Parametre Degeri Degisti. [Mobil]"
+                                    Konu = $"{kod} Kodlu Parametre Degeri Degisti. [Mobil]",
+                                    Cihaz = "mobil"
                                 });
                             }
                             kp.Deger = null;
@@ -512,7 +514,8 @@ namespace OyemCore.Backend.Controllers
                         Aciklama = $"Eski Deger: {eskiBelge} - Yeni Deger: {model.BelgeDurum} (Islem Yapan: {currentUser.AdSoyad})",
                         BelgeKodu = model.BelgeNo,
                         KayitTar = DateTime.Now,
-                        Konu = "Belge Durumu Degisti. [Mobil]"
+                        Konu = "Belge Durumu Degisti. [Mobil]",
+                        Cihaz = "mobil"
                     });
                 }
 
@@ -531,7 +534,8 @@ namespace OyemCore.Backend.Controllers
                         Aciklama = $"(Ist. Tes. Tar.) Eski: {eskiistTar} - Yeni: {model.IstTar} * (Ger?. Tes. Tar.) Eski: {eskigerTar} - Yeni: {model.GerTar} (Islem Yapan: {currentUser.AdSoyad})",
                         BelgeKodu = model.BelgeNo,
                         KayitTar = DateTime.Now,
-                        Konu = "Istenen/Gerçeklesen Teslim Tarihi Degisti. [Mobil]"
+                        Konu = "Istenen/Gerçeklesen Teslim Tarihi Degisti. [Mobil]",
+                        Cihaz = "mobil"
                     });
                 }
 
@@ -580,7 +584,8 @@ namespace OyemCore.Backend.Controllers
                         Aciklama = $"Eski Deger: {eskiRisk} - Yeni Deger: {model.RiskDurum} (Islem Yapan: {currentUser.AdSoyad})",
                         BelgeKodu = model.BelgeNo,
                         KayitTar = DateTime.Now,
-                        Konu = "Risk Durumu Degisti. [Mobil]"
+                        Konu = "Risk Durumu Degisti. [Mobil]",
+                        Cihaz = "mobil"
                     });
                 }
                 deg.RiskDurum = string.IsNullOrEmpty(model.RiskDurum) ? null : model.RiskDurum;
@@ -643,7 +648,8 @@ namespace OyemCore.Backend.Controllers
                     BelgeKodu = belgeNo,
                     Konu = "Tedarikçi Degerlendirme Islemi Tamamlandi. [Mobil]",
                     Aciklama = $"Islem Yapan: {currentUser.AdSoyad}",
-                    KayitTar = DateTime.Now
+                    KayitTar = DateTime.Now,
+                    Cihaz = "mobil"
                 });
 
                 // Write formulas to history as static html/text snapshot
@@ -676,7 +682,8 @@ namespace OyemCore.Backend.Controllers
                         BelgeKodu = belgeNo,
                         Konu = itemP.PKod,
                         Aciklama = sonuc,
-                        KayitTar = DateTime.Now
+                        KayitTar = DateTime.Now,
+                        Cihaz = "mobil"
                     });
                 }
 
@@ -712,7 +719,8 @@ namespace OyemCore.Backend.Controllers
                     BelgeKodu = belgeNo,
                     Konu = "Tedarikçi Degerlendirme Islemi Iptal Edildi. [Mobil]",
                     Aciklama = $"Islem Yapan: {currentUser.AdSoyad}",
-                    KayitTar = DateTime.Now
+                    KayitTar = DateTime.Now,
+                    Cihaz = "mobil"
                 });
 
                 _context.SaveChanges();
@@ -795,7 +803,8 @@ namespace OyemCore.Backend.Controllers
                     BelgeKodu = talep.BelgeNo,
                     Konu = "Tedarikçi Degerlendirme Kaydi Olusturuldu. [Mobil]",
                     Aciklama = $"Kayit Sahibi: {currentUser.AdSoyad}",
-                    KayitTar = DateTime.Now
+                    KayitTar = DateTime.Now,
+                    Cihaz = "mobil"
                 });
 
                 _context.SaveChanges();

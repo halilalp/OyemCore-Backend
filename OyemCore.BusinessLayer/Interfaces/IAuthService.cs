@@ -9,6 +9,7 @@ namespace OyemCore.BusinessLayer.Interfaces
         (bool Success, string Message) ResetPassword(string sicilNo, string username);
         void SavePushToken(int kullaniciID, string token);
         void ClearPushToken(int kullaniciID);
+        void SaveVoipToken(int kullaniciID, string token, string deviceType);
         IEnumerable<object> GetTenants();
     }
 }

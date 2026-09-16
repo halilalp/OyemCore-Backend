@@ -306,7 +306,7 @@ namespace OyemCore.BusinessLayer.Services
 
         public IEnumerable<object> GetPages(int projectId)
         {
-            var query = _context.tb_Sayfa.AsNoTracking().AsQueryable();
+            var query = _context.tb_Sayfa.AsNoTracking().Where(s => s.MenudeGoster == true && s.Durum == true).AsQueryable();
             if (projectId > 0)
             {
                 query = query.Where(s => s.ProjeID == projectId);
@@ -452,12 +452,15 @@ namespace OyemCore.BusinessLayer.Services
 
         public object GetAdminDashboardStats()
         {
-            int userCount = _context.tb_Kullanici.Count();
-            int activeUserCount = _context.tb_Kullanici.Count(u => u.Durum == true);
-            int logCount = _context.tb_Log.Count();
-            int smsCount = _context.tb_Sms.Count();
-            int pageCount = _context.tb_Sayfa.Count();
-            int projectCount = _context.tb_Proje.Count();
+            // Her sayım ayrı korunur: bir tenant'ta bir tablo (ör. tb_Sms ayrı DB'de) yoksa/şeması
+            // farklıysa tek sayım hatası tüm dashboard-stats'ı 400'e düşürmesin (anasayfa banner'ı).
+            int SafeCount(Func<int> f) { try { return f(); } catch { return 0; } }
+            int userCount = SafeCount(() => _context.tb_Kullanici.Count());
+            int activeUserCount = SafeCount(() => _context.tb_Kullanici.Count(u => u.Durum == true));
+            int logCount = SafeCount(() => _context.tb_Log.Count());
+            int smsCount = SafeCount(() => _context.tb_Sms.Count());
+            int pageCount = SafeCount(() => _context.tb_Sayfa.Count());
+            int projectCount = SafeCount(() => _context.tb_Proje.Count());
 
             return new
             {
