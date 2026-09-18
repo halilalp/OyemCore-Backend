@@ -5,6 +5,7 @@ using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using OyemCore.BusinessLayer.Common;
 using OyemCore.BusinessLayer.Dtos;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
@@ -39,12 +40,7 @@ namespace OyemCore.BusinessLayer.Services
                 .FirstOrDefault();
         }
 
-        private bool HasTicketAuthority(string adminBelgeTur)
-        {
-            if (string.IsNullOrEmpty(adminBelgeTur)) return false;
-            var tokens = adminBelgeTur.Split('*', StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim().ToUpper());
-            return tokens.Contains("ADMIN") || tokens.Contains("TICKET");
-        }
+        private bool HasTicketAuthority(string adminBelgeTur) => AdminBelgeTuruHelper.HasYetki(adminBelgeTur, "TICKET");
 
         public (bool Success, object Data, string Message) InitConfig(int kullaniciID)
         {
@@ -470,9 +466,14 @@ namespace OyemCore.BusinessLayer.Services
 
         public IEnumerable<Personel> GetPersonels()
         {
+            // Kucuk (personel-olcekli) tablo — belleğe cekip merkezi/guvenli helper ile filtrelemek,
+            // SQL tarafinda kirilgan substring eslesmesi yapmaktan daha guvenli ve tutarli.
             var users = _context.tb_Kullanici
                 .AsNoTracking()
-                .Where(k => k.AdminBelgeTur != null && (k.AdminBelgeTur.ToUpper().Contains("TICKET") || k.AdminBelgeTur.ToUpper().Contains("ADMIN")))
+                .Where(k => k.AdminBelgeTur != null)
+                .Select(k => new { k.SicilNo, k.AdminBelgeTur })
+                .AsEnumerable()
+                .Where(k => AdminBelgeTuruHelper.HasYetki(k.AdminBelgeTur, "TICKET"))
                 .Select(k => k.SicilNo)
                 .ToList();
 
@@ -663,9 +664,9 @@ namespace OyemCore.BusinessLayer.Services
                 .AsNoTracking()
                 .FirstOrDefault(p => p.SicilNo == usr.SicilNo);
 
-            // Dashboard kuralı: AdminBelgeTur'da "ADMIN" ifadesi geçen (BAKIMADMIN dahil) tüm
-            // şirketleri görür; diğer herkes yalnız kendi şirketini görür.
-            bool isAdmin = (usr.AdminBelgeTur ?? "").ToUpperInvariant().Contains("ADMIN");
+            // Dashboard kuralı: SADECE gercek "ADMIN" belgesi tüm şirketleri görür (BAKIMADMIN
+            // vb. modül-özel kodlar ARTIK dahil değil — bkz. AdminBelgeTuruHelper).
+            bool isAdmin = AdminBelgeTuruHelper.IsAdmin(usr.AdminBelgeTur);
 
             var query = _context.tb_Ticket.AsNoTracking().AsQueryable();
 

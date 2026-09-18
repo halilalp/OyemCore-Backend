@@ -47,9 +47,8 @@ namespace OyemCore.BusinessLayer.Services
 
         private bool HasAuthority(string adminBelgeTur, string turKodu)
         {
-            if (string.IsNullOrEmpty(adminBelgeTur)) return false;
-            var tokens = adminBelgeTur.Split('*', StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim().ToUpper());
-            return tokens.Contains("ADMIN") || tokens.Contains("TICKET") || tokens.Contains(turKodu.ToUpper());
+            if (string.IsNullOrEmpty(turKodu)) return AdminBelgeTuruHelper.HasYetki(adminBelgeTur, "TICKET");
+            return AdminBelgeTuruHelper.HasAnyYetki(adminBelgeTur, "TICKET", turKodu);
         }
 
         // Referans: WebPortal WebServiceBakim.cs TalepGelismeVeKapama/AkademiAta tarzı yetki deseni —
@@ -81,9 +80,8 @@ namespace OyemCore.BusinessLayer.Services
         // HasAuthority'den ayrı tutuluyor).
         private bool HasBelgeTur(string adminBelgeTur, string tur)
         {
-            if (string.IsNullOrEmpty(adminBelgeTur) || string.IsNullOrEmpty(tur)) return false;
-            var tokens = adminBelgeTur.Split('*', StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim().ToUpper());
-            return tokens.Contains(tur.Trim().ToUpper());
+            if (string.IsNullOrEmpty(tur)) return false;
+            return AdminBelgeTuruHelper.Parse(adminBelgeTur).Contains(tur.Trim().ToUpperInvariant());
         }
 
         // Liste ekranı için: her talebin gelişme (tb_TalepGelisme) ve ekli dosya (DosyaUrl'i dolu gelişme) adedi.

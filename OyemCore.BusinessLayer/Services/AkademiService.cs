@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using OyemCore.BusinessLayer.Common;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
 using OyemCore.DataLayer.Interfaces;
@@ -569,9 +570,11 @@ namespace OyemCore.BusinessLayer.Services
                 string mesaj = adSoyad + " - '" + (egitim?.Baslik ?? "") + "' eğitimi için ek sınav hakkı talep etti.";
 
                 var adminSicilleri = _context.tb_Kullanici
-                    .Where(u => u.Durum == true && u.AdminBelgeTur != null && u.AdminBelgeTur.Contains("*AKADEMI"))
+                    .Where(u => u.Durum == true && u.AdminBelgeTur != null)
+                    .Select(u => new { u.SicilNo, u.AdminBelgeTur })
+                    .AsEnumerable()
+                    .Where(u => AdminBelgeTuruHelper.HasYetki(u.AdminBelgeTur, "AKADEMI") && !string.IsNullOrEmpty(u.SicilNo))
                     .Select(u => u.SicilNo)
-                    .Where(s => !string.IsNullOrEmpty(s))
                     .ToList();
 
                 foreach (var adminSicil in adminSicilleri)

@@ -637,7 +637,7 @@ namespace OyemCore.Backend.Controllers
         {
             try
             {
-                var result = _adminService.SaveUserDocumentTypes(id, codes);
+                var result = _adminService.SaveUserDocumentTypes(GetCurrentUserId(), id, codes);
                 if (!result.Success) return BadRequest(new { message = result.Message });
                 return Ok(new { message = result.Message });
             }

@@ -48,17 +48,9 @@ namespace OyemCore.Backend.Controllers
             return User.FindFirst("AdminBelgeTur")?.Value ?? "";
         }
 
-        // STOKADMIN veya genel ADMIN yetkisi (web ClsYetki.UserYetkiKontrol karsiligi).
-        // ONEMLI: Belge yildizla ayrik ("*IT*STOKADMIN*") saklanir; gevsek Contains("ADMIN")
-        // "BAKIMADMIN" gibi ILGISIZ tokenlari da eslerdi. Referanstaki gibi tam token eslesmesi yapilir.
-        private bool HasStokAdmin()
-        {
-            var tokens = (GetAdminBelgeTur() ?? "")
-                .Split(new[] { '*' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(t => t.Trim().ToUpperInvariant())
-                .ToList();
-            return tokens.Contains("ADMIN") || tokens.Contains("STOKADMIN");
-        }
+        // STOKADMIN veya genel ADMIN yetkisi — merkezi AdminBelgeTuruHelper (tam token eslesmesi,
+        // JSON-oncelikli parse) uzerinden.
+        private bool HasStokAdmin() => OyemCore.BusinessLayer.Common.AdminBelgeTuruHelper.HasYetki(GetAdminBelgeTur(), "STOKADMIN");
 
         // ====================================================================
         // MALZEME LISTESI

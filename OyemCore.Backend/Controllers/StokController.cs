@@ -37,7 +37,7 @@ namespace OyemCore.Backend.Controllers
         }
 
         private string GetAdminBelgeTur() => User.FindFirst("AdminBelgeTur")?.Value ?? "";
-        private bool HasStokAdmin() => GetAdminBelgeTur().ToUpperInvariant().Contains("ADMIN");
+        private bool HasStokAdmin() => OyemCore.BusinessLayer.Common.AdminBelgeTuruHelper.HasYetki(GetAdminBelgeTur(), "STOKADMIN");
 
         private string GetSicilNo()
         {

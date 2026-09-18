@@ -30,7 +30,7 @@ namespace OyemCore.Backend.Controllers
         }
 
         private string GetAdminBelgeTur() => User.FindFirst("AdminBelgeTur")?.Value ?? "";
-        private bool HasStokAdmin() => GetAdminBelgeTur().ToUpperInvariant().Contains("ADMIN");
+        private bool HasStokAdmin() => OyemCore.BusinessLayer.Common.AdminBelgeTuruHelper.HasYetki(GetAdminBelgeTur(), "STOKADMIN");
 
         // Kullanicinin yetkili oldugu depo kodlari (web GetAuthorizedWarehouses karsiligi).
         // Depo erisimi HERKES icin (STOKADMIN dahil) yalnizca tb_DepoSorumlusu atamalarindan gelir;

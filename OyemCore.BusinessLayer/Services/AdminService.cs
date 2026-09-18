@@ -93,6 +93,24 @@ namespace OyemCore.BusinessLayer.Services
                 var user = _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == userId);
                 if (user == null) return (false, "Güncellenecek kullanici bulunamadi.", null);
 
+                // Yetki degistirme (mevcut degerden FARKLI bir AdminBelgeTur gonderilmesi) SADECE
+                // gercek ADMIN'ler tarafindan yapilabilir — aksi halde herhangi bir kullanici
+                // kaydi duzenleme yetkisi olan kisi kendine/baskasina "ADMIN" dahil istedigi
+                // kodu yazip sistem genelinde super-admin olabiliyordu.
+                var yeniKodlar = AdminBelgeTuruHelper.Parse(model.AdminBelgeTur);
+                var mevcutKodlar = AdminBelgeTuruHelper.Parse(user.AdminBelgeTur);
+                bool belgeTurDegisiyor = !new HashSet<string>(yeniKodlar).SetEquals(mevcutKodlar);
+                if (belgeTurDegisiyor)
+                {
+                    var callerUsr = _context.tb_Kullanici.AsNoTracking().FirstOrDefault(u => u.KullaniciID == currentUserId);
+                    if (callerUsr == null || !AdminBelgeTuruHelper.IsAdmin(callerUsr.AdminBelgeTur))
+                        return (false, "Yetki degistirmek icin Sistem Yoneticisi (ADMIN) yetkisi gerekiyor.", null);
+
+                    string gecersizKod = yeniKodlar.FirstOrDefault(k => !StaticDocumentTypes.Any(t => t.Kod == k));
+                    if (gecersizKod != null)
+                        return (false, "Tanimsiz yetki kodu: " + gecersizKod, null);
+                }
+
                 user.AdSoyad = model.AdSoyad;
                 user.Unvan = model.Unvan;
                 user.Eposta = model.Eposta;
@@ -100,7 +118,7 @@ namespace OyemCore.BusinessLayer.Services
                 user.Durum = model.Durum;
                 user.Yonetici = model.Yonetici;
                 user.ZimmetSorumlusu = model.ZimmetSorumlusu;
-                user.AdminBelgeTur = model.AdminBelgeTur;
+                user.AdminBelgeTur = AdminBelgeTuruHelper.Serialize(yeniKodlar);
 
                 if (!isAD && !string.IsNullOrEmpty(model.Sifre))
                 {
@@ -130,6 +148,19 @@ namespace OyemCore.BusinessLayer.Services
                     model.KullaniciAdi = null;
                     model.Sifre = null;
                 }
+
+                var yeniKullaniciKodlar = AdminBelgeTuruHelper.Parse(model.AdminBelgeTur);
+                if (yeniKullaniciKodlar.Count > 0)
+                {
+                    var callerUsr = _context.tb_Kullanici.AsNoTracking().FirstOrDefault(u => u.KullaniciID == currentUserId);
+                    if (callerUsr == null || !AdminBelgeTuruHelper.IsAdmin(callerUsr.AdminBelgeTur))
+                        return (false, "Yetki dagitmak icin Sistem Yoneticisi (ADMIN) yetkisi gerekiyor.", null);
+
+                    string gecersizKod = yeniKullaniciKodlar.FirstOrDefault(k => !StaticDocumentTypes.Any(t => t.Kod == k));
+                    if (gecersizKod != null)
+                        return (false, "Tanimsiz yetki kodu: " + gecersizKod, null);
+                }
+                model.AdminBelgeTur = AdminBelgeTuruHelper.Serialize(yeniKullaniciKodlar);
 
                 model.KayitTar = DateTime.Now;
                 model.YillikIzin = 0;
@@ -709,12 +740,18 @@ namespace OyemCore.BusinessLayer.Services
             return false;
         }
 
+        // BU LISTE WebPortal DataLayer/ClsAdmin.cs::TumListe() ile BIREBIR AYNI KOD KUMESINE sahip
+        // olmali — biri degisince digeri de guncellenmeli (iki ayri repo/deploy dongusu, otomatik
+        // senkron yok).
         private static readonly List<(string Kod, string Tanim, string Aciklama)> StaticDocumentTypes = new List<(string, string, string)>
         {
+            ("ADMIN", "Sistem Yoneticisi", "Tum modullerde ve tum sirketlerde sinirsiz erisim. Sadece gercekten sistem yoneticisi olan kisilere verilmelidir."),
             ("ADAY", "Ise Alim Sorumlusu", "Ise alim talepleri, aday degerlendirmeleri ve mülakat takip süreçlerini yöneten IK personeli yetkisidir."),
+            ("AKADEMI", "Akademi Yöneticisi", "Akademi-Egitim süreçlerini yöneten yetkilidir."),
             ("ARGE", "Ar-Ge Proje Yöneticisi", "Ar-Ge projeleri, kaynak planlama ve proje toplanti takip süreçlerini yöneten yetkilidir."),
             ("BAKIM", "Bakim Departmani Sorumlusu", "Makine, tesis, ekipman ariza ve periyodik bakim taleplerini atayan ve onaylayan yetkilidir."),
             ("BAKIMADMIN", "Bakim Departmani Yöneticisi", "Tüm sirketlere ait Makine, tesis, ekipman ariza ve periyodik bakim taleplerini atayan ve onaylayan yetkilidir."),
+            ("BAKIMOKUMA", "Bakim Talep Görüntüleme Yetkisi", "Bakim talep görüntüleme yetkisidir."),
             ("ERP", "ERP Sistem Sorumlusu", "ERP sistemi yetkilendirme, modül aktivasyon ve destek taleplerini yöneten yetkilidir."),
             ("GENELMUDUR", "Genel Müdür", "Satinalma onay süreçleri (GMONAY) basta olmak üzere portal genelindeki en üst düzey onay ve yönetim yetkisidir."),
             ("IK", "Insan Kaynaklari Yöneticisi", "Izin talepleri, aday ise alim, IK form onay süreçlerini yöneten yetkilidir."),
@@ -722,12 +759,16 @@ namespace OyemCore.BusinessLayer.Services
             ("IT", "BT (Bilgi Teknolojileri) Yön.", "BT donanim, yazilim, e-posta ve HelpDesk destek taleplerini atayan ve çözümleyen yetkilidir."),
             ("KALITE", "Kalite Güvence Sorumlusu", "Kalite dökümantasyonu, iç/dış denetimler ve Tedarikçi Degerlendirme onay süreçlerini yöneten yetkilidir."),
             ("KITAP", "Kütüphane Sorumlusu", "çalışanlarin kitap/egitim materyali talep süreçlerini ve kitap teslimlerini yöneten yetkilidir."),
+            ("MALZEMEADMIN", "Malzeme Yönetimi Yetkilisi", "Malzeme Yönetimi Yetkilisi"),
             ("OPEKS", "Opeks Sorumlusu", "Operasyonel harcamalar, bütçe asim onaylari ve Opeks iyilestirme projeleri takip yetkisidir."),
-            ("SAT-MD", "Satinalma Müdür?", "Belirli limitlerin üzerindeki satinalma tekliflerinin onaylanmasi (MDONAY) ve süreç takibinden sorumlu müdür yetkisidir."),
+            ("SAT-MD", "Satinalma Müdürü", "Belirli limitlerin üzerindeki satinalma tekliflerinin onaylanmasi (MDONAY) ve süreç takibinden sorumlu müdür yetkisidir."),
             ("SAT-UZ", "Satinalma Uzmani", "Satinalma taleplerine teklif toplama, teklif girisi (TEKLIF) ve siparis olusturma süreçlerinden sorumlu uzman yetkisidir."),
+            ("SATIS", "Satış İşlemleri Yetkilisi", "Şirket/Şube bazlı sipariş, satış, masraf yönetici yetkisidir."),
+            ("STOKADMIN", "Stok&Depo Yönetimi Yetkilisi", "Stok&Depo Yönetimi Yetkilisi"),
             ("TICKET", "Destek Masasi (HelpDesk) Sor.", "Portal genelindeki destek taleplerini (Ticket) departmanlara yönlendiren ve süreç takibini yapan genel yetkilidir."),
             ("URGE", "Ür-Ge Proje Sorumlusu", "Ürün Gelistirme (Ür-Ge) proje süreçleri, kaynak planlama ve ilgili toplanti dökümanlarini yöneten yetkilidir."),
-            ("TLPACIL", "Talep-önem Seviye Yetkilisi", "Bakim taleplerinde önem seviyesini acil olarak girebilen sorumlu yetkisidir.")
+            ("TLPACIL", "Talep-önem Seviye Yetkilisi", "Bakim taleplerinde önem seviyesini acil olarak girebilen sorumlu yetkisidir."),
+            ("ZIMMETYON", "Zimmet İşlemleri Yetkilisi", "Demirbaş zimmet ve işten çıkış form yönetici yetkisidir.")
         };
 
         public (bool Success, string Message) UpdateUserPassword(int id, string newPassword)
@@ -751,29 +792,43 @@ namespace OyemCore.BusinessLayer.Services
         public IEnumerable<object> GetUserDocumentTypes(int userId)
         {
             var user = _context.tb_Kullanici.AsNoTracking().FirstOrDefault(u => u.KullaniciID == userId);
-            var userCodes = user?.AdminBelgeTur ?? "";
+            var userCodes = AdminBelgeTuruHelper.Parse(user?.AdminBelgeTur);
 
             return StaticDocumentTypes.Select(t => new
             {
                 kod = t.Kod,
                 tanim = t.Tanim,
                 aciklama = t.Aciklama,
-                aktif = userCodes.Contains("*" + t.Kod + "*")
+                aktif = userCodes.Contains(t.Kod)
             }).ToList();
         }
 
-        public (bool Success, string Message) SaveUserDocumentTypes(int userId, List<string> codes)
+        // Bu ekran SADECE yetki dagitim/geri alma icindir (diger alanlari degistirmez) — bu yuzden
+        // her cagrida (mevcut degerle ayni olsa bile) callerUserId'nin gercekten ADMIN olmasi sarttir.
+        public (bool Success, string Message) SaveUserDocumentTypes(int callerUserId, int userId, List<string> codes)
         {
+            var callerUsr = _context.tb_Kullanici.AsNoTracking().FirstOrDefault(u => u.KullaniciID == callerUserId);
+            if (callerUsr == null || !AdminBelgeTuruHelper.IsAdmin(callerUsr.AdminBelgeTur))
+                return (false, "Yetki degistirmek icin Sistem Yoneticisi (ADMIN) yetkisi gerekiyor.");
+
+            var kodlar = (codes ?? new List<string>())
+                .Where(c => !string.IsNullOrWhiteSpace(c))
+                .Select(c => c.Trim().ToUpperInvariant())
+                .ToList();
+            string gecersizKod = kodlar.FirstOrDefault(k => !StaticDocumentTypes.Any(t => t.Kod == k));
+            if (gecersizKod != null)
+                return (false, "Tanimsiz yetki kodu: " + gecersizKod);
+
             var user = _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == userId);
             if (user == null) return (false, "Kullanici bulunamadi.");
 
-            if (codes == null || codes.Count == 0)
+            if (kodlar.Count == 0)
             {
                 user.AdminBelgeTur = "";
             }
             else
             {
-                user.AdminBelgeTur = "*" + string.Join("*", codes.Where(c => !string.IsNullOrEmpty(c))) + "*";
+                user.AdminBelgeTur = AdminBelgeTuruHelper.Serialize(kodlar);
             }
 
             _context.SaveChanges();

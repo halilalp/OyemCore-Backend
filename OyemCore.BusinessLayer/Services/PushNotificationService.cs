@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OyemCore.BusinessLayer.Common;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
@@ -338,10 +339,14 @@ namespace OyemCore.BusinessLayer.Services
             var mod = (moduleCode ?? "").ToUpperInvariant();
             if (string.IsNullOrEmpty(mod)) return list;
 
-            var admins = await context.tb_Kullanici.AsNoTracking()
-                .Where(k => k.AdminBelgeTur != null && k.AdminBelgeTur.ToUpper().Contains(mod))
-                .Select(k => k.SicilNo)
+            var adminRows = await context.tb_Kullanici.AsNoTracking()
+                .Where(k => k.AdminBelgeTur != null)
+                .Select(k => new { k.SicilNo, k.AdminBelgeTur })
                 .ToListAsync();
+            var admins = adminRows
+                .Where(k => AdminBelgeTuruHelper.HasYetki(k.AdminBelgeTur, mod))
+                .Select(k => k.SicilNo)
+                .ToList();
 
             return admins
                 .Where(s => !string.IsNullOrWhiteSpace(s) && !string.Equals(s.Trim(), actor, StringComparison.OrdinalIgnoreCase))
@@ -402,11 +407,12 @@ namespace OyemCore.BusinessLayer.Services
                         new { type = "izin", screen = "IzinScreen", code = leave.BelgeNo }
                     );
 
-                    // Notify HR / "IZIN" roles users
-                    var hrUsers = await context.tb_Kullanici
+                    // Notify HR ("IK") users
+                    var hrUsersAll = await context.tb_Kullanici
                         .AsNoTracking()
-                        .Where(u => u.AdminBelgeTur != null && (u.AdminBelgeTur.Contains("IZIN") || u.AdminBelgeTur.Contains("IK") || u.AdminBelgeTur.Contains("ADMIN")))
+                        .Where(u => u.AdminBelgeTur != null)
                         .ToListAsync();
+                    var hrUsers = hrUsersAll.Where(u => AdminBelgeTuruHelper.HasYetki(u.AdminBelgeTur, "IK")).ToList();
 
                     foreach (var hrUser in hrUsers)
                     {
@@ -541,23 +547,28 @@ namespace OyemCore.BusinessLayer.Services
 
                     if (!targetSicilNos.Any())
                     {
-                        var managers = await (from u in context.tb_Kullanici
+                        var companySicilAdminBelgeTur = await (from u in context.tb_Kullanici
                                               join p in context.tb_Personel on u.SicilNo equals p.SicilNo
-                                              where p.SirketKodu == companyCode &&
-                                                    u.AdminBelgeTur != null &&
-                                                    (u.AdminBelgeTur.ToUpper().Contains(tur) || u.AdminBelgeTur.ToUpper().Contains("ADMIN"))
-                                              select u.SicilNo)
+                                              where p.SirketKodu == companyCode && u.AdminBelgeTur != null
+                                              select new { u.SicilNo, u.AdminBelgeTur })
                                              .AsNoTracking()
                                              .ToListAsync();
+                        var managers = companySicilAdminBelgeTur
+                            .Where(u => AdminBelgeTuruHelper.HasYetki(u.AdminBelgeTur, tur))
+                            .Select(u => u.SicilNo)
+                            .ToList();
 
                         if (!managers.Any())
                         {
-                            managers = await context.tb_Kullanici
+                            var allAdminBelgeTur = await context.tb_Kullanici
                                 .AsNoTracking()
-                                .Where(u => u.AdminBelgeTur != null && 
-                                            (u.AdminBelgeTur.ToUpper().Contains(tur) || u.AdminBelgeTur.ToUpper().Contains("ADMIN")))
-                                .Select(u => u.SicilNo)
+                                .Where(u => u.AdminBelgeTur != null)
+                                .Select(u => new { u.SicilNo, u.AdminBelgeTur })
                                 .ToListAsync();
+                            managers = allAdminBelgeTur
+                                .Where(u => AdminBelgeTuruHelper.HasYetki(u.AdminBelgeTur, tur))
+                                .Select(u => u.SicilNo)
+                                .ToList();
                         }
                         targetSicilNos = managers.Distinct().ToList();
                     }
@@ -863,11 +874,15 @@ Yeni bir {typeLabel.ToLower()} talebi oluşturulmuştur ve yetki/sorumluluk alan
                         .FirstOrDefaultAsync() ?? deg.KayitSicil;
 
                     // Sorumlu bir kişi ataması olmadığı için, TEDARIKCI veya ADMIN yetkili kullanıcılar bilgilendirilir.
-                    var yetkililer = await context.tb_Kullanici
+                    // NOT: "TEDARIKCI" katalogda tanımlı bir kod degil (muhtemelen "KALITE" olmali,
+                    // bkz. ClsAdmin.TumListe — Tedarikçi Değerlendirme KALITE yetkisi altında) — bu
+                    // guvenlik temizliginin kapsami disinda, davranis degistirilmeden ayni kod
+                    // birebir korunuyor.
+                    var yetkililerAll = await context.tb_Kullanici
                         .AsNoTracking()
-                        .Where(u => u.AdminBelgeTur != null &&
-                                    (u.AdminBelgeTur.ToUpper().Contains("TEDARIKCI") || u.AdminBelgeTur.ToUpper().Contains("ADMIN")))
+                        .Where(u => u.AdminBelgeTur != null)
                         .ToListAsync();
+                    var yetkililer = yetkililerAll.Where(u => AdminBelgeTuruHelper.HasYetki(u.AdminBelgeTur, "TEDARIKCI")).ToList();
 
                     foreach (var yetkili in yetkililer)
                     {
@@ -1158,10 +1173,11 @@ Yeni bir {typeLabel.ToLower()} talebi oluşturulmuştur ve yetki/sorumluluk alan
                         .Select(p => p.AdSoyad)
                         .FirstOrDefaultAsync() ?? ticket.KayitSicilNo;
 
-                    var admins = await context.tb_Kullanici
+                    var adminsAll = await context.tb_Kullanici
                         .AsNoTracking()
-                        .Where(u => u.AdminBelgeTur != null && (u.AdminBelgeTur.Contains("TICKET") || u.AdminBelgeTur.Contains("ADMIN")))
+                        .Where(u => u.AdminBelgeTur != null)
                         .ToListAsync();
+                    var admins = adminsAll.Where(u => AdminBelgeTuruHelper.HasYetki(u.AdminBelgeTur, "TICKET")).ToList();
 
                     foreach (var admin in admins)
                     {

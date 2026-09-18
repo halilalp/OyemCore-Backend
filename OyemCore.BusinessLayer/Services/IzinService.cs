@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using OyemCore.BusinessLayer.Common;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
 using OyemCore.DataLayer.Interfaces;
@@ -27,9 +28,7 @@ namespace OyemCore.BusinessLayer.Services
         {
             if (user == null) return false;
             if (user.KullaniciAdi == "admin") return true;
-            if (string.IsNullOrEmpty(user.AdminBelgeTur)) return false;
-            var tokens = user.AdminBelgeTur.Split('*', StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim().ToUpper());
-            return tokens.Contains("IK") || tokens.Contains("ADMIN") || tokens.Contains("SYS") || tokens.Contains("ADM");
+            return AdminBelgeTuruHelper.HasYetki(user.AdminBelgeTur, "IK");
         }
 
         public (IEnumerable<object> Requests, int YillikIzinBalance) GetIzinRequests(int kullaniciID)
@@ -337,8 +336,10 @@ namespace OyemCore.BusinessLayer.Services
                     // burada aynı yetki filtresiyle mail de gönderiliyor.
                     var hrUsersForMail = _context.tb_Kullanici
                         .AsNoTracking()
-                        .Where(u => u.AdminBelgeTur != null && (u.AdminBelgeTur.Contains("IZIN") || u.AdminBelgeTur.Contains("IK") || u.AdminBelgeTur.Contains("ADMIN")))
-                        .Where(u => u.SicilNo != request.KayitSicil && !string.IsNullOrEmpty(u.Eposta))
+                        .Where(u => u.AdminBelgeTur != null && u.SicilNo != request.KayitSicil && !string.IsNullOrEmpty(u.Eposta))
+                        .Select(u => new { u.AdminBelgeTur, u.Eposta })
+                        .AsEnumerable()
+                        .Where(u => AdminBelgeTuruHelper.HasYetki(u.AdminBelgeTur, "IK"))
                         .Select(u => u.Eposta)
                         .Distinct()
                         .ToList();

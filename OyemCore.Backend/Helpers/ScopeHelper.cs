@@ -2,15 +2,17 @@ using System;
 using System.Linq;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using OyemCore.BusinessLayer.Common;
 using OyemCore.DataLayer.Interfaces;
 
 namespace OyemCore.Backend.Helpers
 {
     // Dashboard/rapor endpoint'lerinde "admin olmayan kullanıcı yalnızca kendi şirketinin
     // datasını görür" kuralını sunucu tarafında uygular.
-    // KURAL (kullanıcı isteği): tb_Kullanici.AdminBelgeTur içinde "ADMIN" varsa TÜM şirketleri
-    // görür; yoksa (BAKIMADMIN, TICKET gibi modül belgeleri dahil) yalnız kendi şirketini görür.
-    // AdminBelgeTur formatı webportal'daki gibi yıldızla ayrık ("*IT*ERP*ADMIN*").
+    // KURAL (güncellendi — bkz. AdminBelgeTuruHelper): SADECE gerçek "ADMIN" belgesi tüm
+    // şirketleri görür. BAKIMADMIN/STOKADMIN/MALZEMEADMIN gibi modül-özel "*ADMIN" kodları
+    // ARTIK otomatik süper-admin sayılmıyor — bu, eski ".Contains(\"ADMIN\")" alt-string
+    // kontrolünün istemeden verdiği geniş yetkiydi (bkz. güvenlik incelemesi).
     public static class ScopeHelper
     {
         // adminKodlari parametresi geriye dönük uyumluluk için tutuluyor; kurala göre yalnız
@@ -20,8 +22,7 @@ namespace OyemCore.Backend.Helpers
             var sicilNo = user?.FindFirst("SicilNo")?.Value ?? "";
             var adminBelgeTur = user?.FindFirst("AdminBelgeTur")?.Value ?? "";
 
-            // Kural: AdminBelgeTur'unde "ADMIN" ifadesi geçiyorsa (BAKIMADMIN dahil) tüm şirketler.
-            bool isAdmin = (adminBelgeTur ?? "").ToUpperInvariant().Contains("ADMIN");
+            bool isAdmin = AdminBelgeTuruHelper.IsAdmin(adminBelgeTur);
 
             string ownSirket = string.IsNullOrEmpty(sicilNo)
                 ? ""

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using OyemCore.BusinessLayer.Common;
 using OyemCore.BusinessLayer.Dtos;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
@@ -776,14 +777,7 @@ namespace OyemCore.BusinessLayer.Services
 
         public BakimDropdownsDto GetBakimDropdowns(string sicilNo, string adminBelgeTur)
         {
-            // Referans (webportal) AdminBelgeTur formatı: "*IT*ERP*BAKIMADMIN*" — yıldızla ayrık.
-            // Contains("ADMIN") kullanmak "BAKIMADMIN" içinde de eşleştiği için yanlış sonuç
-            // veriyordu; webportal'daki gibi yıldızdan bölüp tam token karşılaştırılır.
-            var belgeTurler = (adminBelgeTur ?? "")
-                .Split(new[] { '*' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(t => t.Trim().ToUpperInvariant())
-                .ToList();
-            bool isBakimAdmin = belgeTurler.Contains("BAKIMADMIN") || belgeTurler.Contains("ADMIN");
+            bool isBakimAdmin = AdminBelgeTuruHelper.HasYetki(adminBelgeTur, "BAKIMADMIN");
 
             var sirkets = _context.tb_Sirket.AsNoTracking().OrderBy(s => s.SirketKodu).ToList();
             var bolums = _context.tb_Bolum.AsNoTracking().OrderBy(b => b.BolumAdi).ToList();

@@ -37,7 +37,7 @@ namespace OyemCore.BusinessLayer.Interfaces
         // Mobile Admin Settings extensions
         (bool Success, string Message) UpdateUserPassword(int id, string newPassword);
         IEnumerable<object> GetUserDocumentTypes(int userId);
-        (bool Success, string Message) SaveUserDocumentTypes(int userId, List<string> codes);
+        (bool Success, string Message) SaveUserDocumentTypes(int callerUserId, int userId, List<string> codes);
         IEnumerable<object> GetHelpDeskCategories(string search, string categoryId, string typeCode);
         object GetHelpDeskCategoryDetail(int id);
         (bool Success, string Message) SaveHelpDeskCategory(tb_TalepKategori model);

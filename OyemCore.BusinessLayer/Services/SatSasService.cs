@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using OyemCore.BusinessLayer.Common;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
 using OyemCore.DataLayer.Interfaces;
@@ -52,8 +53,7 @@ namespace OyemCore.BusinessLayer.Services
             IQueryable<tb_SatOnay> q = kendi;
             q = q.Union(bekleyen);
 
-            bool isSatAdmin = !string.IsNullOrEmpty(adminBelgeTur) &&
-                              (adminBelgeTur.Contains("SAT-UZ") || adminBelgeTur.Contains("SAT-MD") || adminBelgeTur.Contains("GENELMUDUR"));
+            bool isSatAdmin = AdminBelgeTuruHelper.HasAnyYetki(adminBelgeTur, "SAT-UZ", "SAT-MD", "GENELMUDUR");
             if (isSatAdmin)
                 q = q.Union(_context.tb_SatOnay.Where(o => o.SurecDurum != "TASLAK"));
 

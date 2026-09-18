@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using OyemCore.BusinessLayer.Common;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
 using OyemCore.DataLayer.Interfaces;
@@ -38,7 +39,7 @@ namespace OyemCore.BusinessLayer.Services
             var usr = _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == userId);
             if (usr == null) return new List<object>();
             string eposta = usr.Eposta ?? "";
-            var adminTurler = (usr.AdminBelgeTur ?? "").Split('*').Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+            var adminTurler = AdminBelgeTuruHelper.Parse(usr.AdminBelgeTur);
 
             // Yetki: sahibi + proje türü admini + katılımcı + görev sorumlusu
             var q = _context.tb_Toplanti.Where(i =>
@@ -107,7 +108,7 @@ namespace OyemCore.BusinessLayer.Services
             var usr = _context.tb_Kullanici.FirstOrDefault(u => u.KullaniciID == userId);
             if (usr == null) return new { acikProje = 0, gorev = 0, gecikmis = 0 };
             string eposta = usr.Eposta ?? "";
-            var adminTurler = (usr.AdminBelgeTur ?? "").Split('*').Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+            var adminTurler = AdminBelgeTuruHelper.Parse(usr.AdminBelgeTur);
 
             var q = _context.tb_Toplanti.Where(i =>
                 i.KullaniciEposta == eposta ||

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using OyemCore.BusinessLayer.Common;
 using OyemCore.BusinessLayer.Dtos;
 using OyemCore.BusinessLayer.Interfaces;
 using OyemCore.DataLayer.Entities;
@@ -285,11 +286,7 @@ namespace OyemCore.BusinessLayer.Services
             if (usr == null) return sonuc;
 
             var sicil = usr.SicilNo ?? "";
-            // AdminBelgeTur formati yildizla ayrik: "*IT*ERP*ADMIN*"
-            var adminTurler = (usr.AdminBelgeTur ?? "")
-                .Split(new[] { '*' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(t => t.Trim().ToUpperInvariant())
-                .ToHashSet();
+            var adminTurler = new HashSet<string>(AdminBelgeTuruHelper.Parse(usr.AdminBelgeTur));
 
             foreach (var projeId in projeIds)
             {
