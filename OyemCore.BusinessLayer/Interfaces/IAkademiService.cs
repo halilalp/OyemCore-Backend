@@ -44,6 +44,7 @@ namespace OyemCore.BusinessLayer.Interfaces
 
         // Sınav oturumu (personel tarafı — web + mobil ortak, tek-oturum kilidi)
         object GetExamBrief(int atamaID, string sicilNo);
+        object RequestExamRetry(int atamaID, string sicilNo, string sebep);
         object StartOrResumeExam(int atamaID, string sicilNo);
         object SubmitAnswer(int atamaID, string sicilNo, string secilenSecenek);
         bool ReportTabSwitch(int atamaID, string sicilNo);

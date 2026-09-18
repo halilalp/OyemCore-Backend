@@ -94,6 +94,7 @@ namespace OyemCore.DataLayer.Contexts
         public DbSet<tb_AkademiSoru> tb_AkademiSoru { get; set; }
         public DbSet<tb_AkademiSinavOturum> tb_AkademiSinavOturum { get; set; }
         public DbSet<tb_AkademiSinavSonuc> tb_AkademiSinavSonuc { get; set; }
+        public DbSet<tb_AkademiSinavTalep> tb_AkademiSinavTalep { get; set; }
         public DbSet<tb_Notification> tb_Notification { get; set; }
         public DbSet<tb_Chat> tb_Chat { get; set; }
         public DbSet<tb_ChatGroup> tb_ChatGroup { get; set; }
@@ -193,6 +194,7 @@ namespace OyemCore.DataLayer.Contexts
             modelBuilder.Entity<tb_AkademiSoru>().ToTable("tb_AkademiSoru").HasKey(e => e.SoruID);
             modelBuilder.Entity<tb_AkademiSinavOturum>().ToTable("tb_AkademiSinavOturum").HasKey(e => e.OturumID);
             modelBuilder.Entity<tb_AkademiSinavSonuc>().ToTable("tb_AkademiSinavSonuc").HasKey(e => e.SonucID);
+            modelBuilder.Entity<tb_AkademiSinavTalep>().ToTable("tb_AkademiSinavTalep").HasKey(e => e.TalepID);
             modelBuilder.Entity<tb_EgitimKategori>().ToTable("tb_EgitimKategori").HasKey(e => e.KategoriID);
             modelBuilder.Entity<tb_Departman>().ToTable("tb_Departman").HasKey(e => e.Kod);
             modelBuilder.Entity<tb_Unvan>().ToTable("tb_Unvan").HasKey(e => e.UnvanKodu);

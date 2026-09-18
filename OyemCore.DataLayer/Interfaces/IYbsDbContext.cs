@@ -89,6 +89,7 @@ namespace OyemCore.DataLayer.Interfaces
         DbSet<tb_AkademiSoru> tb_AkademiSoru { get; set; }
         DbSet<tb_AkademiSinavOturum> tb_AkademiSinavOturum { get; set; }
         DbSet<tb_AkademiSinavSonuc> tb_AkademiSinavSonuc { get; set; }
+        DbSet<tb_AkademiSinavTalep> tb_AkademiSinavTalep { get; set; }
         DbSet<tb_Notification> tb_Notification { get; set; }
         DbSet<tb_Chat> tb_Chat { get; set; }
         DbSet<tb_ChatGroup> tb_ChatGroup { get; set; }

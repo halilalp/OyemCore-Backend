@@ -198,6 +198,12 @@ namespace OyemCore.BusinessLayer.Services
             var egitim = _context.tb_AkademiEgitim.FirstOrDefault(e => e.AkademiEgitimID == atama.AkademiEgitimID);
             var ilerleme = _context.tb_AkademiIlerleme.FirstOrDefault(i => i.AtamaID == atamaID);
 
+            var sonTalep = _context.tb_AkademiSinavTalep
+                .Where(t => t.AtamaID == atamaID)
+                .OrderByDescending(t => t.TalepID)
+                .FirstOrDefault();
+            string? ekSinavRedSebebi = (sonTalep != null && sonTalep.Durum == "REDDEDILDI") ? sonTalep.RedSebebi : null;
+
             return new
             {
                 atamaID = atama.AtamaID,
@@ -214,7 +220,8 @@ namespace OyemCore.BusinessLayer.Services
                 maxIzlenenSaniye = ilerleme?.MaxIzlenenSaniye ?? 0,
                 tamamlandiMi = ilerleme?.TamamlandiMi ?? false,
                 tamamlanmaTarihi = (ilerleme != null && ilerleme.TamamlanmaTarihi.HasValue) ? ilerleme.TamamlanmaTarihi.Value.ToString("dd/MM/yyyy") : null,
-                sinavAktif = egitim?.SinavAktif ?? false
+                sinavAktif = egitim?.SinavAktif ?? false,
+                ekSinavRedSebebi
             };
         }
 
@@ -505,14 +512,87 @@ namespace OyemCore.BusinessLayer.Services
 
             int tamamlanmisDenemeSayisi = _context.tb_AkademiSinavSonuc.Count(s => s.AtamaID == atamaID);
             int izinliDenemeSayisi = 1 + atama.SinavEkHakSayisi;
+            bool tekrarTalebiBekliyor = _context.tb_AkademiSinavTalep.Any(t => t.AtamaID == atamaID && t.Durum == "BEKLEMEDE");
 
             return new
             {
                 soruSayisi,
                 soruSuresiSaniye = egitim.SinavSoruSuresiSaniye,
                 gecmePuanYuzdesi = egitim.GecmePuanYuzdesi,
-                tekrarHakkiKalmadi = tamamlanmisDenemeSayisi >= izinliDenemeSayisi
+                tekrarHakkiKalmadi = tamamlanmisDenemeSayisi >= izinliDenemeSayisi,
+                tekrarTalebiBekliyor
             };
+        }
+
+        // Personel: hakki bitince sebep yazarak tekrar hakki talep eder — AKADEMI admin
+        // belge turune sahip yonetici WebPortal'dan onaylar/reddeder (bkz. WebServiceAkademi.cs
+        // ayni isim/mantiktaki AkademiSinavTekrarTalepEt).
+        public object RequestExamRetry(int atamaID, string sicilNo, string sebep)
+        {
+            var atama = _context.tb_AkademiAtama.FirstOrDefault(a => a.AtamaID == atamaID);
+            if (atama == null) throw new Exception("Atama bulunamadi.");
+            if (atama.SicilNo != sicilNo) throw new UnauthorizedAccessException("Bu atama size ait degil.");
+            if (string.IsNullOrWhiteSpace(sebep)) throw new Exception("Lutfen talep sebebini yaziniz.");
+
+            int tamamlanmisDenemeSayisi = _context.tb_AkademiSinavSonuc.Count(s => s.AtamaID == atamaID);
+            if (tamamlanmisDenemeSayisi < 1 + atama.SinavEkHakSayisi)
+                throw new Exception("Tekrar hakkiniz zaten var, talep gondermenize gerek yok.");
+            if (_context.tb_AkademiSinavTalep.Any(t => t.AtamaID == atamaID && t.Durum == "BEKLEMEDE"))
+                throw new Exception("Bu egitim icin zaten bekleyen bir talebiniz var.");
+
+            _context.tb_AkademiSinavTalep.Add(new tb_AkademiSinavTalep
+            {
+                AtamaID = atamaID,
+                TalepSebebi = sebep.Trim(),
+                TalepTarihi = DateTime.Now,
+                Durum = "BEKLEMEDE"
+            });
+            _context.SaveChanges();
+
+            NotifyAkademiAdmins(sicilNo, atama.AkademiEgitimID);
+
+            return new { success = true };
+        }
+
+        // AKADEMI admin belge turune sahip TUM kullanicilara (WebPortal'daki
+        // ".Contains("*AKADEMI")" deseniyle AYNI sorgu) hem zil bildirimi (tb_Notification)
+        // hem gercek push gonderir. WebServiceAkademi.cs'teki AkademiSinavTekrarTalepEt'in
+        // mobil kaynakli talepler icin izole mantik tekrari — iki backend birbirine HTTP atmiyor.
+        private void NotifyAkademiAdmins(string talepEdenSicilNo, int akademiEgitimID)
+        {
+            try
+            {
+                var talepEden = _context.tb_Personel.FirstOrDefault(p => p.SicilNo == talepEdenSicilNo);
+                var egitim = _context.tb_AkademiEgitim.FirstOrDefault(e => e.AkademiEgitimID == akademiEgitimID);
+                string adSoyad = talepEden?.AdSoyad ?? talepEdenSicilNo;
+                string baslik = "Ek Sınav Hakkı Talebi";
+                string mesaj = adSoyad + " - '" + (egitim?.Baslik ?? "") + "' eğitimi için ek sınav hakkı talep etti.";
+
+                var adminSicilleri = _context.tb_Kullanici
+                    .Where(u => u.Durum == true && u.AdminBelgeTur != null && u.AdminBelgeTur.Contains("*AKADEMI"))
+                    .Select(u => u.SicilNo)
+                    .Where(s => !string.IsNullOrEmpty(s))
+                    .ToList();
+
+                foreach (var adminSicil in adminSicilleri)
+                {
+                    _context.tb_Notification.Add(new tb_Notification
+                    {
+                        SicilNo = adminSicil!,
+                        Baslik = baslik,
+                        Aciklama = mesaj,
+                        LinkUrl = "Akademi/Default.html",
+                        Kategori = "Akademi",
+                        ReferansID = akademiEgitimID.ToString(),
+                        Okundu = false,
+                        KayitTarihi = DateTime.Now
+                    });
+
+                    _ = _push.SendToUserBySicilNoAsync(adminSicil!, baslik, mesaj, new { type = "akademiSinavTalep" });
+                }
+                _context.SaveChanges();
+            }
+            catch { }
         }
 
         public object StartOrResumeExam(int atamaID, string sicilNo)

@@ -221,6 +221,14 @@ namespace OyemCore.Backend.Controllers
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
 
+        [HttpPost("{atamaId}/exam/retry-request")]
+        public IActionResult RequestExamRetry(int atamaId, [FromBody] AkademiExamRetryRequest req)
+        {
+            try { return Ok(_akademiService.RequestExamRetry(atamaId, GetCurrentSicilNo(), req?.Sebep ?? "")); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
         [HttpPost("{atamaId}/exam/start")]
         public IActionResult StartOrResumeExam(int atamaId)
         {
@@ -366,5 +374,10 @@ namespace OyemCore.Backend.Controllers
     public class AkademiExamAnswerRequest
     {
         public string SecilenSecenek { get; set; }
+    }
+
+    public class AkademiExamRetryRequest
+    {
+        public string Sebep { get; set; }
     }
 }

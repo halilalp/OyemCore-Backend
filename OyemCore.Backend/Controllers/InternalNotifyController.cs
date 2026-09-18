@@ -262,6 +262,27 @@ namespace OyemCore.Backend.Controllers
             return Ok(new { success = true });
         }
 
+        // WebPortal'da (WebServiceAkademi.cs > AkademiSinavTekrarTalepEt) bir personel ek sınav
+        // hakkı talep ettiğinde AKADEMI admin belge türüne sahip yöneticilere push göndermek için.
+        // "screen" KASITLI verilmiyor: onay/red işlemi sadece WebPortal'da yapılıyor, mobilde
+        // karşılık gelen bir ekran yok — navigateFromNotificationData zaten screen yoksa sessizce
+        // hiçbir yere yönlendirmiyor.
+        [HttpPost("akademi-sinav-talep")]
+        public async Task<IActionResult> AkademiSinavTalep([FromBody] AkademiSinavTalepNotifyDto dto)
+        {
+            if (!IsAuthorized()) return Unauthorized();
+            if (dto == null || string.IsNullOrEmpty(dto.SicilNo)) return BadRequest();
+
+            await _pushService.SendToUserBySicilNoAsync(
+                dto.SicilNo,
+                dto.Baslik ?? "Ek Sınav Hakkı Talebi",
+                dto.Mesaj ?? "",
+                new { type = "akademiSinavTalep" }
+            );
+
+            return Ok(new { success = true });
+        }
+
         // WebPortal'ın kendi (eski) ChatHub'ından başlattığı görüntülü/sesli aramayı, mobile doğru
         // şekilde (gerçek arama olarak) ulaştırmak için kullanılır — genel "chat" endpoint'i "sohbet
         // mesajı" şeklinde push gönderdiğinden ChatHub.StartCall'daki gerçek arama zilini tetiklemiyordu.
@@ -455,6 +476,13 @@ namespace OyemCore.Backend.Controllers
         public string Baslik { get; set; }
         public string Mesaj { get; set; }
         public int AtamaID { get; set; }
+    }
+
+    public class AkademiSinavTalepNotifyDto
+    {
+        public string SicilNo { get; set; }
+        public string Baslik { get; set; }
+        public string Mesaj { get; set; }
     }
 
     public class CallNotifyDto
