@@ -43,6 +43,7 @@ namespace OyemCore.BusinessLayer.Interfaces
         int ImportQuestionsBulk(int kullaniciID, int akademiEgitimID, List<(string soruMetni, string a, string b, string? c, string? d, string dogru, int puan)> rows);
 
         // Sınav oturumu (personel tarafı — web + mobil ortak, tek-oturum kilidi)
+        object GetExamBrief(int atamaID, string sicilNo);
         object StartOrResumeExam(int atamaID, string sicilNo);
         object SubmitAnswer(int atamaID, string sicilNo, string secilenSecenek);
         bool ReportTabSwitch(int atamaID, string sicilNo);

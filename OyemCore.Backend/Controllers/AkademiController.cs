@@ -213,6 +213,14 @@ namespace OyemCore.Backend.Controllers
 
         // ── Faz 2 — Sınav oturumu (personel tarafı) ──
 
+        [HttpGet("{atamaId}/exam/brief")]
+        public IActionResult GetExamBrief(int atamaId)
+        {
+            try { return Ok(_akademiService.GetExamBrief(atamaId, GetCurrentSicilNo())); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
         [HttpPost("{atamaId}/exam/start")]
         public IActionResult StartOrResumeExam(int atamaId)
         {

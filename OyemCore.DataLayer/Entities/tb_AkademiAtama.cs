@@ -13,5 +13,7 @@ namespace OyemCore.DataLayer.Entities
         public bool ZorunluMu { get; set; }
         public bool AktifIzlemeZorunlu { get; set; }
         public bool IptalMi { get; set; }
+        // Yonetici "Sinavi Sifirla" dedikce +1 artar. Izinli deneme sayisi = 1 + bu deger.
+        public int SinavEkHakSayisi { get; set; }
     }
 }

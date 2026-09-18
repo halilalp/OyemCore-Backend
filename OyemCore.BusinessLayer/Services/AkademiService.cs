@@ -489,6 +489,32 @@ namespace OyemCore.BusinessLayer.Services
             };
         }
 
+        // Oturum ACMADAN sinav bilgilerini doner — hazirlik/bilgilendirme ekrani icin.
+        // Daha once tamamlanmis bir deneme varsa (ve tekrar hakki yoksa) bunu da bildirir.
+        public object GetExamBrief(int atamaID, string sicilNo)
+        {
+            var atama = _context.tb_AkademiAtama.FirstOrDefault(a => a.AtamaID == atamaID);
+            if (atama == null) throw new Exception("Atama bulunamadi.");
+            if (atama.SicilNo != sicilNo) throw new UnauthorizedAccessException("Bu atama size ait degil.");
+
+            var egitim = _context.tb_AkademiEgitim.FirstOrDefault(e => e.AkademiEgitimID == atama.AkademiEgitimID);
+            if (egitim == null || !egitim.SinavAktif) throw new Exception("Bu egitim icin sinav tanimli degil.");
+
+            int havuzSayisi = _context.tb_AkademiSoru.Count(s => s.AkademiEgitimID == atama.AkademiEgitimID && s.AktifMi);
+            int soruSayisi = egitim.SinavSoruSayisi.HasValue && egitim.SinavSoruSayisi.Value < havuzSayisi ? egitim.SinavSoruSayisi.Value : havuzSayisi;
+
+            int tamamlanmisDenemeSayisi = _context.tb_AkademiSinavSonuc.Count(s => s.AtamaID == atamaID);
+            int izinliDenemeSayisi = 1 + atama.SinavEkHakSayisi;
+
+            return new
+            {
+                soruSayisi,
+                soruSuresiSaniye = egitim.SinavSoruSuresiSaniye,
+                gecmePuanYuzdesi = egitim.GecmePuanYuzdesi,
+                tekrarHakkiKalmadi = tamamlanmisDenemeSayisi >= izinliDenemeSayisi
+            };
+        }
+
         public object StartOrResumeExam(int atamaID, string sicilNo)
         {
             var atama = _context.tb_AkademiAtama.FirstOrDefault(a => a.AtamaID == atamaID);
@@ -501,6 +527,13 @@ namespace OyemCore.BusinessLayer.Services
             var ilerleme = _context.tb_AkademiIlerleme.FirstOrDefault(i => i.AtamaID == atamaID);
             if (ilerleme == null || !ilerleme.TamamlandiMi)
                 throw new Exception("Sinava baslamadan once egitim icerigini tamamlamalisiniz.");
+
+            // Tek-deneme kilidi: tamamlanmis deneme sayisi izinli hakki (1 + yonetici tarafindan
+            // verilen ek hak) asmis/esitlemisse yeni oturum ACILMAZ. Yonetici WebPortal raporundan
+            // "Sinavi Sifirla" ile SinavEkHakSayisi'ni artirarak tekrar hakki tanir.
+            int tamamlanmisDenemeSayisi = _context.tb_AkademiSinavSonuc.Count(s => s.AtamaID == atamaID);
+            if (tamamlanmisDenemeSayisi >= 1 + atama.SinavEkHakSayisi)
+                throw new Exception("Sinavi zaten tamamladiniz. Tekrar hakki icin yoneticinizle iletisime gecin.");
 
             // Tek-oturum kilidi: tamamlanmamis mevcut oturum varsa onu devam ettir.
             var oturum = _context.tb_AkademiSinavOturum
