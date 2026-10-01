@@ -238,6 +238,7 @@ namespace OyemCore.BusinessLayer.Services
                         orderby p.SiraNo, s.SiraNo
                         select new
                         {
+                            sayfaID = s.SayfaID,
                             kullaniciID = y.KullaniciID,
                             sayfaAdi = s.SayfaAdi ?? "",
                             sayfaUrl = s.SayfaUrl ?? "",
@@ -252,7 +253,13 @@ namespace OyemCore.BusinessLayer.Services
                             mobilIcon = s.MobilIcon
                         };
 
-            var rows = query.ToList();
+            // KOK NEDEN (2026-09-22): tb_KullaniciYetki'de ayni kullanici+SayfaID icin birden fazla
+            // yetki satiri varsa (veri kalitesi sorunu — IşıkTarım'da tespit edildi), bu join aynen
+            // cogaltip donduruyordu. Mobil taraf her "Talepler" sayfasini 3 alt projeye (IT/ERP/Bakım
+            // HelpDesk) actigi icin cift satir, arayuzde ayni oge iki kez gorunmesine yol aciyordu.
+            // DB'deki cift kaydi kesin duzeltmek ayri bir is (veri temizligi) — burasi mobilin DB'deki
+            // olasi tekrar eden yetki kayitlarindan HER ZAMAN etkilenmemesini garanti eder.
+            var rows = query.ToList().DistinctBy(r => r.sayfaID).ToList();
 
             // Proje kartlarindaki rozet (webportal WebServiceDashboard.BildirimHesapla ile ayni)
             var bildirimler = ProjeBildirimleriHesapla(userId, rows.Select(r => r.projeID ?? 0).Distinct().ToList());

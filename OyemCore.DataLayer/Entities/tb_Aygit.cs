@@ -23,6 +23,7 @@ namespace OyemCore.DataLayer.Entities
         public string ZimmetliSicil { get; set; }
         public bool? HurdaDurum { get; set; }
         public bool? BarkodOnay { get; set; }
+        public bool? BakimDurumu { get; set; }
         public string Ozellik1 { get; set; }
         public string Ozellik2 { get; set; }
         public string Ozellik3 { get; set; }

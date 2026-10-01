@@ -69,6 +69,13 @@ namespace OyemCore.DataLayer.Interfaces
         DbSet<tb_AygitKategori> tb_AygitKategori { get; set; }
         DbSet<tb_Marka> tb_Marka { get; set; }
         DbSet<tb_AygitPersonel> tb_AygitPersonel { get; set; }
+        DbSet<tb_DemirbasHurdaOnaylayici> tb_DemirbasHurdaOnaylayici { get; set; }
+        DbSet<tb_AygitBakimTuru> tb_AygitBakimTuru { get; set; }
+        DbSet<tb_DemirbasHurdaTalep> tb_DemirbasHurdaTalep { get; set; }
+        DbSet<tb_DemirbasHurdaDosya> tb_DemirbasHurdaDosya { get; set; }
+        DbSet<tb_DemirbasHurdaOnay> tb_DemirbasHurdaOnay { get; set; }
+        DbSet<tb_AygitBakim> tb_AygitBakim { get; set; }
+        DbSet<tb_AygitBakimDosya> tb_AygitBakimDosya { get; set; }
         DbSet<tb_BakimPlanTemizlikOnay> tb_BakimPlanTemizlikOnay { get; set; }
         DbSet<tb_Tedarikci> tb_Tedarikci { get; set; }
         DbSet<tb_TedDeg> tb_TedDeg { get; set; }

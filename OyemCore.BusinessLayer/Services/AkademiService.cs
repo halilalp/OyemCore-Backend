@@ -176,17 +176,34 @@ namespace OyemCore.BusinessLayer.Services
                         orderby a.AtamaTarihi descending
                         select new { a, e, i };
 
-            return query.ToList().Select(x => new
+            var list = query.ToList();
+            var atamaIDs = list.Select(x => x.a.AtamaID).ToList();
+            // Her atama icin EN SON sinav denemesi — liste ekraninda "Sınav: %80 · Geçti" gibi
+            // ozet gostermek icin. Kucuk/kisi-olcekli veri oldugundan tek sorguda belleğe cekilir.
+            var sonSinavlar = _context.tb_AkademiSinavSonuc
+                .Where(s => atamaIDs.Contains(s.AtamaID))
+                .ToList()
+                .GroupBy(s => s.AtamaID)
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(s => s.SonucID).First());
+
+            return list.Select(x =>
             {
-                atamaID = x.a.AtamaID,
-                baslik = x.e.Baslik,
-                icerikTipi = x.e.IcerikTipi,
-                kategoriKodu = x.e.KategoriKodu ?? "",
-                sureSaniye = x.e.SureSaniye,
-                sonTarih = x.a.SonTarih?.ToString("dd/MM/yyyy"),
-                zorunluMu = x.a.ZorunluMu,
-                maxIzlenenSaniye = x.i != null ? x.i.MaxIzlenenSaniye : 0,
-                tamamlandiMi = x.i != null && x.i.TamamlandiMi
+                sonSinavlar.TryGetValue(x.a.AtamaID, out var sonuc);
+                return new
+                {
+                    atamaID = x.a.AtamaID,
+                    baslik = x.e.Baslik,
+                    icerikTipi = x.e.IcerikTipi,
+                    kategoriKodu = x.e.KategoriKodu ?? "",
+                    sureSaniye = x.e.SureSaniye,
+                    sonTarih = x.a.SonTarih?.ToString("dd/MM/yyyy"),
+                    zorunluMu = x.a.ZorunluMu,
+                    maxIzlenenSaniye = x.i != null ? x.i.MaxIzlenenSaniye : 0,
+                    tamamlandiMi = x.i != null && x.i.TamamlandiMi,
+                    sinavGirildiMi = sonuc != null,
+                    sinavBasariliMi = sonuc != null ? (bool?)sonuc.BasariliMi : null,
+                    sinavPuanYuzdesi = sonuc != null ? (int?)sonuc.PuanYuzdesi : null
+                };
             }).ToList();
         }
 
@@ -204,6 +221,21 @@ namespace OyemCore.BusinessLayer.Services
                 .OrderByDescending(t => t.TalepID)
                 .FirstOrDefault();
             string? ekSinavRedSebebi = (sonTalep != null && sonTalep.Durum == "REDDEDILDI") ? sonTalep.RedSebebi : null;
+            bool ekSinavTalebiBekliyor = sonTalep != null && sonTalep.Durum == "BEKLEMEDE";
+
+            // Sinav sonucu (varsa EN SON deneme) — detay sayfasinda sonuc + "Ek Sınav
+            // İsteğinde Bulun" butonunu (sınavı yeniden başlatmadan) gosterebilmek icin.
+            var sonSonuc = _context.tb_AkademiSinavSonuc
+                .Where(s => s.AtamaID == atamaID)
+                .OrderByDescending(s => s.SonucID)
+                .FirstOrDefault();
+
+            // "Sınavı Başlat" mı "Ek Sınav İsteğinde Bulun" mu gosterilecegini belirleyen
+            // GERCEK kural budur — sinavGirildiMi (hic denendi mi) DEGIL, cunku ek hak
+            // ONAYLANDIKTAN SONRA kullanici tekrar deneyebilir olmasina ragmen "hic denendi mi"
+            // hep true kalirdi. GetExamBrief'teki AYNI hesap (StartOrResumeExam'in de kullandigi).
+            int tamamlanmisDenemeSayisi = _context.tb_AkademiSinavSonuc.Count(s => s.AtamaID == atamaID);
+            bool tekrarHakkiKalmadi = tamamlanmisDenemeSayisi >= 1 + atama.SinavEkHakSayisi;
 
             return new
             {
@@ -222,11 +254,18 @@ namespace OyemCore.BusinessLayer.Services
                 tamamlandiMi = ilerleme?.TamamlandiMi ?? false,
                 tamamlanmaTarihi = (ilerleme != null && ilerleme.TamamlanmaTarihi.HasValue) ? ilerleme.TamamlanmaTarihi.Value.ToString("dd/MM/yyyy") : null,
                 sinavAktif = egitim?.SinavAktif ?? false,
-                ekSinavRedSebebi
+                ekSinavRedSebebi,
+                ekSinavTalebiBekliyor,
+                tekrarHakkiKalmadi,
+                sinavGirildiMi = sonSonuc != null,
+                sinavBasariliMi = sonSonuc != null ? (bool?)sonSonuc.BasariliMi : null,
+                sinavPuanYuzdesi = sonSonuc != null ? (int?)sonSonuc.PuanYuzdesi : null,
+                sinavDogruSayisi = sonSonuc != null ? (int?)sonSonuc.DogruSayisi : null,
+                sinavToplamSoru = sonSonuc != null ? (int?)sonSonuc.ToplamSoru : null
             };
         }
 
-        public bool UpdateProgress(int atamaID, string sicilNo, int maxIzlenenSaniye, int aktifIzlemeSaniyeArtis, bool tamamlaZorla = false)
+        public AkademiProgressResult UpdateProgress(int atamaID, string sicilNo, int maxIzlenenSaniye, int aktifIzlemeSaniyeArtis, bool tamamlaZorla = false)
         {
             var atama = _context.tb_AkademiAtama.FirstOrDefault(a => a.AtamaID == atamaID);
             if (atama == null) throw new Exception("Atama bulunamadi.");
@@ -271,7 +310,12 @@ namespace OyemCore.BusinessLayer.Services
             }
 
             _context.SaveChanges();
-            return true;
+            return new AkademiProgressResult
+            {
+                Success = true,
+                TamamlandiMi = ilerleme.TamamlandiMi,
+                MaxIzlenenSaniye = ilerleme.MaxIzlenenSaniye
+            };
         }
 
         // -------------------------------------------------------------
@@ -591,11 +635,92 @@ namespace OyemCore.BusinessLayer.Services
                         KayitTarihi = DateTime.Now
                     });
 
-                    _ = _push.SendToUserBySicilNoAsync(adminSicil!, baslik, mesaj, new { type = "akademiSinavTalep" });
+                    _ = _push.SendToUserBySicilNoAsync(adminSicil!, baslik, mesaj, new { type = "akademiSinavTalep", screen = "AkademiSinavIstekleri" });
                 }
                 _context.SaveChanges();
             }
             catch { }
+        }
+
+        // AKADEMI yetkisi kontrolu — WebPortal WebServiceAkademi.cs'teki
+        // ClsYetki.UserYetkiKontrol(usr.AdminBelgeTur,"AKADEMI") ile AYNI kural.
+        private void AkademiYetkisiZorunluTut(string sicilNo)
+        {
+            var caller = _context.tb_Kullanici.FirstOrDefault(u => u.SicilNo == sicilNo);
+            if (caller == null || !AdminBelgeTuruHelper.HasYetki(caller.AdminBelgeTur, "AKADEMI"))
+                throw new UnauthorizedAccessException("Bu islem icin 'Akademi Yoneticisi' yetkisi gerekiyor.");
+        }
+
+        public IEnumerable<object> GetPendingExamRetryRequests(string sicilNo)
+        {
+            AkademiYetkisiZorunluTut(sicilNo);
+
+            var talepler = _context.tb_AkademiSinavTalep.Where(t => t.Durum == "BEKLEMEDE").OrderBy(t => t.TalepTarihi).ToList();
+            var atamaIDs = talepler.Select(t => t.AtamaID).ToList();
+            var atamalar = _context.tb_AkademiAtama.Where(a => atamaIDs.Contains(a.AtamaID)).ToList().ToDictionary(a => a.AtamaID);
+            var egitimIDs = atamalar.Values.Select(a => a.AkademiEgitimID).Distinct().ToList();
+            var egitimler = _context.tb_AkademiEgitim.Where(e => egitimIDs.Contains(e.AkademiEgitimID)).ToList().ToDictionary(e => e.AkademiEgitimID);
+            var siciller = atamalar.Values.Select(a => a.SicilNo).Distinct().ToList();
+            var personeller = _context.tb_Personel.Where(p => siciller.Contains(p.SicilNo)).ToList().ToDictionary(p => p.SicilNo);
+
+            return talepler.Select(t =>
+            {
+                atamalar.TryGetValue(t.AtamaID, out var atama);
+                string egitimBaslik = "";
+                string adSoyad = atama?.SicilNo ?? "";
+                if (atama != null)
+                {
+                    if (egitimler.TryGetValue(atama.AkademiEgitimID, out var egitim)) egitimBaslik = egitim.Baslik;
+                    if (personeller.TryGetValue(atama.SicilNo, out var personel)) adSoyad = personel.AdSoyad;
+                }
+                return new
+                {
+                    talepID = t.TalepID,
+                    atamaID = t.AtamaID,
+                    adSoyad,
+                    egitimBaslik,
+                    talepSebebi = t.TalepSebebi,
+                    talepTarihi = t.TalepTarihi.ToString("dd.MM.yyyy HH:mm")
+                };
+            }).ToList();
+        }
+
+        public object ApproveExamRetryRequest(int talepID, string sicilNo)
+        {
+            AkademiYetkisiZorunluTut(sicilNo);
+
+            var talep = _context.tb_AkademiSinavTalep.FirstOrDefault(t => t.TalepID == talepID);
+            if (talep == null) throw new Exception("Talep bulunamadi.");
+            if (talep.Durum != "BEKLEMEDE") throw new Exception("Bu talep zaten cevaplanmis.");
+
+            var atama = _context.tb_AkademiAtama.FirstOrDefault(a => a.AtamaID == talep.AtamaID);
+            if (atama == null) throw new Exception("Atama bulunamadi.");
+
+            talep.Durum = "ONAYLANDI";
+            talep.CevaplayanSicil = sicilNo;
+            talep.CevapTarihi = DateTime.Now;
+            atama.SinavEkHakSayisi++;
+            _context.SaveChanges();
+
+            return new { success = true };
+        }
+
+        public object RejectExamRetryRequest(int talepID, string sicilNo, string redSebebi)
+        {
+            AkademiYetkisiZorunluTut(sicilNo);
+            if (string.IsNullOrWhiteSpace(redSebebi)) throw new Exception("Lutfen red sebebini yaziniz.");
+
+            var talep = _context.tb_AkademiSinavTalep.FirstOrDefault(t => t.TalepID == talepID);
+            if (talep == null) throw new Exception("Talep bulunamadi.");
+            if (talep.Durum != "BEKLEMEDE") throw new Exception("Bu talep zaten cevaplanmis.");
+
+            talep.Durum = "REDDEDILDI";
+            talep.RedSebebi = redSebebi.Trim();
+            talep.CevaplayanSicil = sicilNo;
+            talep.CevapTarihi = DateTime.Now;
+            _context.SaveChanges();
+
+            return new { success = true };
         }
 
         public object StartOrResumeExam(int atamaID, string sicilNo)

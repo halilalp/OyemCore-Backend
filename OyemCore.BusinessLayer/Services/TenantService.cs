@@ -79,6 +79,13 @@ namespace OyemCore.BusinessLayer.Services
             return _masterDbContext.Tenants.FirstOrDefault(t => t.TenantId == tenantId && t.IsActive);
         }
 
+        // bkz. ITenantService.GetCurrentTenantId() — ChatHub presence sozluklerini tenant'a gore
+        // ayirmak icin GetCurrentTenant()'in TenantId'sini disariya acar.
+        public string GetCurrentTenantId()
+        {
+            return GetCurrentTenant()?.TenantId;
+        }
+
         public string GetCurrentConnectionString()
         {
             // 1. Multi-tenant istek: tenant çözümlenebiliyorsa VE kendi kaydı varsa önce onu kullan.
@@ -229,6 +236,11 @@ namespace OyemCore.BusinessLayer.Services
             var storageFolder = GetCurrentStorageFolder() ?? "";
             return storageFolder.StartsWith("http://", System.StringComparison.OrdinalIgnoreCase)
                 || storageFolder.StartsWith("https://", System.StringComparison.OrdinalIgnoreCase);
+        }
+
+        public string GetWebPortalBaseUrl()
+        {
+            return IsStorageRemote() ? GetCurrentStorageFolder() : null;
         }
 
         public string ResolveLocalStorageFolder(string contentRootPath)
@@ -383,6 +395,8 @@ namespace OyemCore.BusinessLayer.Services
                     return "DataYonetim/img";
                 case "AKADEMI":
                     return "Akademi/Docs";
+                case "ZIMMET":
+                    return "Zimmet/Docs";
                 default:
                     return "HelpDesk/Docs";
             }

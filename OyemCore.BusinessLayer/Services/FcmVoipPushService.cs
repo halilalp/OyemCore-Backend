@@ -45,14 +45,14 @@ namespace OyemCore.BusinessLayer.Services
             }
         }
 
-        public async Task SendCallWakeAsync(string fcmToken, string callerSicilNo, string callerName, string roomUrl, string callType, string callerImage)
+        public async Task<(bool Success, string Detail)> SendCallWakeAsync(string fcmToken, string callerSicilNo, string callerName, string roomUrl, string callType, string callerImage)
         {
             if (_credential == null || string.IsNullOrEmpty(_projectId))
             {
                 _logger.LogWarning("FcmVoipPushService: kimlik bilgisi/proje ID yok, gonderim atlandi.");
-                return;
+                return (false, "Firebase kimlik bilgisi/ProjectId yapilandirilmamis.");
             }
-            if (string.IsNullOrEmpty(fcmToken)) return;
+            if (string.IsNullOrEmpty(fcmToken)) return (false, "fcmToken bos.");
 
             try
             {
@@ -97,15 +97,18 @@ namespace OyemCore.BusinessLayer.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogError("FcmVoipPushService: FCM gonderimi basarisiz. HTTP: {StatusCode}, Response: {Response}", response.StatusCode, responseBody);
+                    return (false, $"FCM HTTP {(int)response.StatusCode}. Response: {responseBody}");
                 }
                 else
                 {
                     _logger.LogInformation("FcmVoipPushService: Arama uyandirma mesaji gonderildi. SicilNo (arayan): {CallerSicilNo}", callerSicilNo);
+                    return (true, $"FCM kabul etti (HTTP {(int)response.StatusCode}).");
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "FcmVoipPushService: SendCallWakeAsync basarisiz.");
+                return (false, $"Exception: {ex.Message}");
             }
         }
     }

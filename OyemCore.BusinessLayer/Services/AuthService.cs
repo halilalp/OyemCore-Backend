@@ -362,6 +362,24 @@ namespace OyemCore.BusinessLayer.Services
 
                     if (!string.IsNullOrEmpty(user.SicilNo))
                     {
+                        string deviceType = token.StartsWith("ExponentPushToken") ? "Expo" : "Device";
+
+                        // KOK NEDEN (2026-09-23): asagidaki "otherDevices" temizligi SADECE ayni
+                        // token'i tasiyan satirlari siliyordu — Expo token'i (reinstall/guncelleme
+                        // sonrasi, bazen sıradan bir app acilisinda bile) DEGISTIGINDE eski satir hic
+                        // silinmiyordu, ayni SicilNo icin BIRDEN FAZLA "Expo" satiri birikiyordu.
+                        // SendToUserBySicilNoAsync tb_UserDevices'taki TUM token'lara push atiyor —
+                        // bu da ayni cihaza neredeyse esZAMANLI birden fazla push gitmesine (ve
+                        // "2 adet cevapsiz arama bildirimi" gibi kullanici sikayetlerine) yol aciyordu.
+                        // Artik ayni SicilNo + ayni DeviceType icin FARKLI token tasiyan eski satirlar
+                        // yeni token kaydedilirken temizleniyor — kullanici basina bu turde TEK aktif
+                        // token kaliyor (VoIP gibi farkli DeviceType'lar bundan etkilenmez).
+                        var staleSameTypeDevices = _context.tb_UserDevices
+                            .Where(d => d.SicilNo == user.SicilNo && d.DeviceType == deviceType && d.PushToken != token)
+                            .ToList();
+                        if (staleSameTypeDevices.Count > 0)
+                            _context.tb_UserDevices.RemoveRange(staleSameTypeDevices);
+
                         var device = _context.tb_UserDevices
                             .FirstOrDefault(d => d.SicilNo == user.SicilNo && d.PushToken == token);
 
@@ -371,7 +389,7 @@ namespace OyemCore.BusinessLayer.Services
                             {
                                 SicilNo = user.SicilNo,
                                 PushToken = token,
-                                DeviceType = token.StartsWith("ExponentPushToken") ? "Expo" : "Device",
+                                DeviceType = deviceType,
                                 KayitTarihi = DateTime.Now,
                                 SonGirisTarihi = DateTime.Now
                             };

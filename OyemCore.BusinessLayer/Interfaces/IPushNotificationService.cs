@@ -4,9 +4,9 @@ namespace OyemCore.BusinessLayer.Interfaces
 {
     public interface IPushNotificationService
     {
-        // channelId: Android'de hangi bildirim kanalının kullanılacağını belirler (App.tsx'te
-        // setNotificationChannelAsync ile önceden oluşturulmuş olmalı — örn. gelen arama için
-        // "incoming_call", farklı bir zil sesi/titreşim kadansı taşır). null ise "default" kanal kullanılır.
+        // channelId: gecmiste Android bildirim kanali secimi icin kullanilirdi (ozel arama zil sesi/
+        // titresim) — 2026-09-23'te arama push'u da diger bildirimlerle ayni normal yola alindiginda
+        // kullanimdan kalkti. Parametre geriye donuk uyumluluk icin duruyor, artik hep null geciliyor.
         Task SendToUserBySicilNoAsync(string sicilNo, string title, string body, object data = null, string channelId = null);
         Task SendToUserByKullaniciIdAsync(int kullaniciId, string title, string body, object data = null, string channelId = null);
 

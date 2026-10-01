@@ -101,9 +101,11 @@ namespace OyemCore.Backend.Controllers
 
                 if (inline)
                 {
-                    // PhysicalFile automatically sets correct headers for inline rendering and cache-validation.
-                    // This is essential for React Native <Image> component.
-                    return PhysicalFile(fullPath, contentType);
+                    // enableRangeProcessing: true — şart, çünkü video oynatıcılar (ExoPlayer/expo-video)
+                    // "moov" atom'u dosyanın sonundaysa (faststart olmayan MP4, çoğu telefon kaydı böyle)
+                    // Range istegiyle dogrudan sona atlar; Range desteklenmezse tüm dosyayı (onlarca MB)
+                    // sirayla indirmeden oynatma baslayamaz ve oynatici 00:00'da sonsuza dek takili kalir.
+                    return PhysicalFile(fullPath, contentType, enableRangeProcessing: true);
                 }
                 else
                 {

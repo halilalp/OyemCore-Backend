@@ -10,19 +10,22 @@ namespace OyemCore.Backend.Hubs
     {
         private readonly IHubContext<ChatHub> _hub;
         private readonly ILogger<ChatRealtimeDispatcher> _logger;
+        private readonly ITenantService _tenantService;
 
-        public ChatRealtimeDispatcher(IHubContext<ChatHub> hub, ILogger<ChatRealtimeDispatcher> logger)
+        public ChatRealtimeDispatcher(IHubContext<ChatHub> hub, ILogger<ChatRealtimeDispatcher> logger, ITenantService tenantService)
         {
             _hub = hub;
             _logger = logger;
+            _tenantService = tenantService;
         }
 
         public void SendToSicils(IEnumerable<string> sicils, string method, params object[] args)
         {
             if (sicils == null) return;
+            string tenantId = _tenantService.GetCurrentTenantId();
             foreach (var sicil in sicils)
             {
-                foreach (var connId in ChatHub.ConnectionsFor(sicil))
+                foreach (var connId in ChatHub.ConnectionsFor(tenantId, sicil))
                 {
                     // SendAsync bilerek await edilmiyor (bu metod void — arayanları bloklamasın),
                     // ama önceden Task'ı hiç gözlemlemiyorduk: bağlantı kopmuş/geçersiz olduğunda
@@ -37,6 +40,6 @@ namespace OyemCore.Backend.Hubs
             }
         }
 
-        public bool IsOnline(string sicilNo) => ChatHub.IsOnline(sicilNo);
+        public bool IsOnline(string sicilNo) => ChatHub.IsOnline(_tenantService.GetCurrentTenantId(), sicilNo);
     }
 }

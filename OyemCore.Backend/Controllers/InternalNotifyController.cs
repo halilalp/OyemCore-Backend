@@ -27,12 +27,14 @@ namespace OyemCore.Backend.Controllers
         private readonly IPushNotificationService _pushService;
         private readonly IConfiguration _configuration;
         private readonly IHubContext<ChatHub> _chatHub;
+        private readonly ITenantService _tenantService;
 
-        public InternalNotifyController(IPushNotificationService pushService, IConfiguration configuration, IHubContext<ChatHub> chatHub)
+        public InternalNotifyController(IPushNotificationService pushService, IConfiguration configuration, IHubContext<ChatHub> chatHub, ITenantService tenantService)
         {
             _pushService = pushService;
             _configuration = configuration;
             _chatHub = chatHub;
+            _tenantService = tenantService;
         }
 
         // TEŞHİS: DB/loglama hiç devreye girmeden, sadece deploy edilen kodun GERÇEKTEN güncel
@@ -41,7 +43,15 @@ namespace OyemCore.Backend.Controllers
         [AllowAnonymous]
         public IActionResult Version()
         {
-            return Ok(new { version = "BUILD-2026-09-15-AKADEMI-FAZ2", serverTimeUtc = DateTime.UtcNow });
+            return Ok(new
+            {
+                version = "BUILD-2026-09-23-BACKEND-DLL-STARTCALL-LOG",
+                // BusinessLayer AYRI bir DLL (OyemCore.BusinessLayer.dll) — bu Controller katmanindan
+                // (OyemCore.Backend.dll) BAGIMSIZ deploy edildigi icin, biri guncellenip digeri
+                // unutulabiliyor. Bu alan o DLL'in GERCEKTEN guncel olup olmadigini tek istekle kanitlar.
+                businessLayerVersion = OyemCore.BusinessLayer.Services.PushNotificationService.BuildMarker,
+                serverTimeUtc = DateTime.UtcNow
+            });
         }
 
         // TEŞHİS: tb_Log/EF Core/arka plan görevi gibi ARA KATMANLARA hiç güvenmeden — token bulma
@@ -98,6 +108,247 @@ namespace OyemCore.Backend.Controllers
             {
                 result["exception"] = ex.ToString();
                 result["sonuc"] = "HATA";
+            }
+            return Ok(result);
+        }
+
+        // TEŞHİS (2026-09-23, GEÇİCİ): ChatHub.StartCall'un tb_Log'a HİÇBİR İZ (ne CALL-PUSH-ENTER
+        // ne STARTCALL-HIT, awaited/raw ADO.NET dahil) birakmadigi, ama SignalR invoke'unun client'a
+        // "basarili" dondugu tespit edildi — StartCall'in TAM OLARAK hangi adimda "kayboldugunu"
+        // (yoksa hic mi calismiyor) tb_Log'a guvenmeden, HTTP cevabinda adim adim gormek icin.
+        [HttpGet("startcall-debug")]
+        [AllowAnonymous]
+        public async Task<IActionResult> StartCallDebug(
+            [FromQuery] string senderSicilNo, [FromQuery] string targetSicilNo,
+            [FromServices] IServiceProvider serviceProvider, [FromServices] IDailyCallService daily)
+        {
+            var result = new System.Collections.Generic.Dictionary<string, object>();
+            result["adim"] = "baslangic";
+            try
+            {
+                result["adim"] = "1-parametre-kontrolu";
+                if (string.IsNullOrEmpty(senderSicilNo) || string.IsNullOrEmpty(targetSicilNo))
+                {
+                    result["sonuc"] = "senderSicilNo/targetSicilNo bos";
+                    return Ok(result);
+                }
+                string cleanSender = senderSicilNo.Trim();
+                string cleanTarget = targetSicilNo.Trim();
+
+                result["adim"] = "2-db-cozumleme";
+                var db = serviceProvider.GetService(typeof(IYbsDbContext)) as IYbsDbContext;
+                if (db == null) { result["sonuc"] = "IYbsDbContext COZULEMEDI"; return Ok(result); }
+
+                result["adim"] = "3-gonderen-adsoyad-sorgusu";
+                string gonderenAdSoyad = db.tb_Kullanici
+                    .Where(u => u.SicilNo == cleanSender).Select(u => u.AdSoyad).FirstOrDefault() ?? "Arayan";
+                result["gonderenAdSoyad"] = gonderenAdSoyad;
+
+                result["adim"] = "4-daily-room-olusturma";
+                string roomUrl = await daily.CreateRoomAsync();
+                result["roomUrl"] = roomUrl;
+
+                result["adim"] = "5-push-gonderme";
+                var pushResult = new System.Collections.Generic.Dictionary<string, object>();
+                try
+                {
+                    await _pushService.SendToUserBySicilNoAsync(cleanTarget, gonderenAdSoyad, "📞 Görüntülü Arama Geliyor...",
+                        new { screen = "IncomingCall", type = "call", callerSicilNo = cleanSender, callerName = gonderenAdSoyad, isGroup = false, gonderenSicilNo = cleanSender, roomUrl, callType = "video" });
+                    pushResult["sonuc"] = "SendToUserBySicilNoAsync HATASIZ TAMAMLANDI";
+                }
+                catch (Exception pushEx)
+                {
+                    pushResult["sonuc"] = "SendToUserBySicilNoAsync EXCEPTION FIRLATTI";
+                    pushResult["exception"] = pushEx.ToString();
+                }
+                result["pushSonucu"] = pushResult;
+
+                result["adim"] = "6-tamamlandi";
+                result["sonuc"] = "TUM ADIMLAR TAMAMLANDI";
+            }
+            catch (Exception ex)
+            {
+                result["sonuc"] = "HATA (adim: " + result["adim"] + ")";
+                result["exception"] = ex.ToString();
+            }
+            return Ok(result);
+        }
+
+        // TEŞHİS: Kelime havuzundaki (tb_GameWord.Word, şifreli) ve tamamlanmış oyunlardaki
+        // (tb_GameScore.TargetWord, şifreli) hedef kelimelerin GERÇEK (çözülmüş) karakterlerini
+        // görmek için — "İNANCI" gibi bir kelimenin sonunun noktali İ mi yoksa noktasiz I ile mi
+        // kayitli oldugunu dogrulamak amacli.
+        [HttpGet("game-words-debug")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GameWordsDebug([FromQuery] string contains, [FromServices] IServiceProvider serviceProvider)
+        {
+            var result = new System.Collections.Generic.Dictionary<string, object>();
+            try
+            {
+                var db = serviceProvider.GetService(typeof(IYbsDbContext)) as IYbsDbContext;
+                if (db == null) { result["sonuc"] = "IYbsDbContext COZULEMEDI"; return Ok(result); }
+
+                Func<string, string> escape = s => s == null ? null : string.Concat(Array.ConvertAll(s.ToCharArray(), c => c > 127 ? $"\\u{(int)c:X4}({c})" : c.ToString()));
+
+                var pool = db.tb_GameWordPool.Where(w => w.IsActive).OrderByDescending(w => w.Id).Take(500).ToList()
+                    .Select(w => new { w.Id, Word = OyemCore.DataLayer.Helpers.ClsEncryption.Decrypt(w.Word) })
+                    .Where(w => string.IsNullOrEmpty(contains) || (w.Word != null && w.Word.ToUpperInvariant().Contains(contains.ToUpperInvariant())))
+                    .Select(w => new { w.Id, word = w.Word, wordEscaped = escape(w.Word) })
+                    .ToList();
+                result["havuz"] = pool;
+
+                var scores = db.tb_GameScore.OrderByDescending(s => s.Id).Take(50).ToList()
+                    .Select(s => new { s.Id, s.SicilNo, Target = OyemCore.DataLayer.Helpers.ClsEncryption.Decrypt(s.TargetWord) })
+                    .Where(s => string.IsNullOrEmpty(contains) || (s.Target != null && s.Target.ToUpperInvariant().Contains(contains.ToUpperInvariant())))
+                    .Select(s => new { s.Id, s.SicilNo, target = s.Target, targetEscaped = escape(s.Target) })
+                    .ToList();
+                result["tamamlananHedefler"] = scores;
+                result["sonuc"] = "TAMAMLANDI";
+            }
+            catch (Exception ex)
+            {
+                result["sonuc"] = "HATA";
+                result["exception"] = ex.ToString();
+            }
+            return Ok(result);
+        }
+
+        [HttpGet("game-debug")]
+        [AllowAnonymous]
+        public async Task<IActionResult> GameDebug([FromServices] IServiceProvider serviceProvider)
+        {
+            var result = new System.Collections.Generic.Dictionary<string, object>();
+            try
+            {
+                var db = serviceProvider.GetService(typeof(IYbsDbContext)) as IYbsDbContext;
+                if (db == null) { result["sonuc"] = "IYbsDbContext COZULEMEDI"; return Ok(result); }
+
+                string connStr = db.Database.GetConnectionString();
+                using var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr);
+                await conn.OpenAsync();
+
+                using (var colCmd = new Microsoft.Data.SqlClient.SqlCommand(
+                    "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, COLLATION_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='tb_GameScore' AND COLUMN_NAME IN ('Guesses','TargetWord')",
+                    conn))
+                using (var colReader = await colCmd.ExecuteReaderAsync())
+                {
+                    var cols = new System.Collections.Generic.List<object>();
+                    while (await colReader.ReadAsync())
+                    {
+                        cols.Add(new { column = colReader.GetString(0), dataType = colReader.GetString(1), maxLen = colReader.IsDBNull(2) ? (int?)null : colReader.GetInt32(2), collation = colReader.IsDBNull(3) ? null : colReader.GetString(3) });
+                    }
+                    result["kolonlar"] = cols;
+                }
+
+                using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(
+                    "SELECT TOP 10 Id, SicilNo, Guesses, GameDate FROM tb_GameScore ORDER BY Id DESC", conn))
+                using (var reader = await cmd.ExecuteReaderAsync())
+                {
+                    var rows = new System.Collections.Generic.List<object>();
+                    while (await reader.ReadAsync())
+                    {
+                        string guesses = reader.IsDBNull(2) ? null : reader.GetString(2);
+                        string escaped = guesses == null ? null : string.Concat(Array.ConvertAll(guesses.ToCharArray(), c => c > 127 || c < 32 ? $"\\u{(int)c:X4}({c})" : c.ToString()));
+                        rows.Add(new { id = reader.GetInt32(0), sicilNo = reader.GetString(1), guesses, guessesEscaped = escaped, gameDate = reader.GetDateTime(3) });
+                    }
+                    result["kayitlar"] = rows;
+                }
+                result["sonuc"] = "TAMAMLANDI";
+            }
+            catch (Exception ex)
+            {
+                result["sonuc"] = "HATA";
+                result["exception"] = ex.ToString();
+            }
+            return Ok(result);
+        }
+
+        // TEŞHİS: SendExpoNotificationAsync her push denemesinde tb_Log'a PUSH-NOT-OK/PUSH-NOT-ERROR/
+        // PUSH-NOT-SKIP-PASIF yazıyor — bu, Expo'nun GERÇEK ticket cevabını (kabul/hata) görmek için
+        // en son N kaydı SQL erişimi olmadan HTTP cevabında döndürür.
+        [HttpGet("push-log-debug")]
+        [AllowAnonymous]
+        public async Task<IActionResult> PushLogDebug([FromQuery] string sicilNo, [FromServices] IServiceProvider serviceProvider)
+        {
+            var result = new System.Collections.Generic.Dictionary<string, object>();
+            try
+            {
+                var db = serviceProvider.GetService(typeof(IYbsDbContext)) as IYbsDbContext;
+                if (db == null) { result["sonuc"] = "IYbsDbContext COZULEMEDI"; return Ok(result); }
+
+                string connStr = db.Database.GetConnectionString();
+                using var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr);
+                await conn.OpenAsync();
+                using var cmd = new Microsoft.Data.SqlClient.SqlCommand(
+                    "SELECT TOP 15 KayitTar, Konu, Aciklama FROM tb_Log WHERE Konu LIKE 'PUSH-NOT%' AND (@SicilNo IS NULL OR Aciklama LIKE '%' + @SicilNo + '%') ORDER BY KayitTar DESC",
+                    conn);
+                cmd.Parameters.AddWithValue("@SicilNo", (object)sicilNo ?? DBNull.Value);
+                using var reader = await cmd.ExecuteReaderAsync();
+                var rows = new System.Collections.Generic.List<object>();
+                while (await reader.ReadAsync())
+                {
+                    rows.Add(new
+                    {
+                        kayitTar = reader.GetDateTime(0),
+                        konu = reader.GetString(1),
+                        aciklama = reader.IsDBNull(2) ? null : reader.GetString(2)
+                    });
+                }
+                result["kayitlar"] = rows;
+                result["sonuc"] = "TAMAMLANDI";
+            }
+            catch (Exception ex)
+            {
+                result["sonuc"] = "HATA";
+                result["exception"] = ex.ToString();
+            }
+            return Ok(result);
+        }
+
+        // TEŞHİS: PushNotificationService.LogPush (ham ADO.NET INSERT) canlida hic basarili
+        // yazmamisti (Cihaz='backend-raw' icin tb_Log'da sifir kayit) — hatayi yutmadan
+        // dogrudan HTTP cevabinda gormek icin LogPush'un AYNISINI burada tekrarliyoruz.
+        [HttpGet("logpush-debug")]
+        [AllowAnonymous]
+        public async Task<IActionResult> LogPushDebug([FromServices] IServiceProvider serviceProvider)
+        {
+            var result = new System.Collections.Generic.Dictionary<string, object>();
+            try
+            {
+                var db = serviceProvider.GetService(typeof(IYbsDbContext)) as IYbsDbContext;
+                if (db == null)
+                {
+                    result["sonuc"] = "IYbsDbContext COZULEMEDI";
+                    return Ok(result);
+                }
+                string connStr = db.Database.GetConnectionString();
+                result["connStrDolu"] = !string.IsNullOrEmpty(connStr);
+                result["connStrDataSource"] = connStr?.Split(';').FirstOrDefault(s => s.Trim().StartsWith("Data Source", StringComparison.OrdinalIgnoreCase));
+
+                using var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr);
+                await conn.OpenAsync();
+                result["baglantiAcildi"] = true;
+
+                using var cmd = new Microsoft.Data.SqlClient.SqlCommand(
+                    "INSERT INTO tb_Log (SicilNo, Eposta, Konu, Aciklama, Cihaz, KayitTar) VALUES (@SicilNo, @Eposta, @Konu, @Aciklama, @Cihaz, @KayitTar)",
+                    conn);
+                cmd.Parameters.AddWithValue("@SicilNo", "SYSTEM");
+                cmd.Parameters.AddWithValue("@Eposta", "system@oyemsoft.com");
+                cmd.Parameters.AddWithValue("@Konu", "LOGPUSH-DEBUG-TEST");
+                cmd.Parameters.AddWithValue("@Aciklama", "logpush-debug endpointinden test insert");
+                cmd.Parameters.AddWithValue("@Cihaz", "backend-raw-debug");
+                cmd.Parameters.AddWithValue("@KayitTar", DateTime.Now);
+                int rowsAffected = await cmd.ExecuteNonQueryAsync();
+                result["insertSatirSayisi"] = rowsAffected;
+                result["sonuc"] = "BASARILI";
+            }
+            catch (Exception ex)
+            {
+                result["sonuc"] = "HATA";
+                result["exceptionType"] = ex.GetType().FullName;
+                result["exceptionMessage"] = ex.Message;
+                result["exceptionInner"] = ex.InnerException?.Message;
+                result["exceptionStack"] = ex.StackTrace;
             }
             return Ok(result);
         }
@@ -283,6 +534,26 @@ namespace OyemCore.Backend.Controllers
             return Ok(new { success = true });
         }
 
+        // WebPortal'daki hurda talebi olusturma/karar uc noktalari cagirir — hem talep acilirken
+        // onaylayicilara hem de sonuclaninca talep edene bildirim gonderir. screen dolduruluyor
+        // (akademi-sinav-talep'in aksine) cunku burada mobilde GERCEK bir karsilik ekran var
+        // (HurdaOnaylarimScreen) — bildirime dokununca dogrudan oraya gidilmeli.
+        [HttpPost("demirbas-hurda")]
+        public async Task<IActionResult> DemirbasHurda([FromBody] AkademiSinavTalepNotifyDto dto)
+        {
+            if (!IsAuthorized()) return Unauthorized();
+            if (dto == null || string.IsNullOrEmpty(dto.SicilNo)) return BadRequest();
+
+            await _pushService.SendToUserBySicilNoAsync(
+                dto.SicilNo,
+                dto.Baslik ?? "Hurda Talebi",
+                dto.Mesaj ?? "",
+                new { type = "demirbasHurda", screen = "HurdaOnaylarimScreen" }
+            );
+
+            return Ok(new { success = true });
+        }
+
         // WebPortal'ın kendi (eski) ChatHub'ından başlattığı görüntülü/sesli aramayı, mobile doğru
         // şekilde (gerçek arama olarak) ulaştırmak için kullanılır — genel "chat" endpoint'i "sohbet
         // mesajı" şeklinde push gönderdiğinden ChatHub.StartCall'daki gerçek arama zilini tetiklemiyordu.
@@ -295,9 +566,11 @@ namespace OyemCore.Backend.Controllers
             string cleanTarget = dto.TargetSicilNo.Trim();
             string cleanCaller = dto.CallerSicilNo.Trim();
 
+            // KARAR (2026-09-23): bkz. ChatHub.StartCall — arama push'u artik ozel kanal/ses olmadan,
+            // diger tum bildirimlerle ayni normal push yolundan gonderiliyor (guvenilirlik icin).
             await _pushService.SendToUserBySicilNoAsync(
                 cleanTarget,
-                dto.CallerName ?? "Kullanıcı",
+                dto.CallerName ?? "Arayan",
                 "📞 Görüntülü Arama Geliyor...",
                 new {
                     screen = "IncomingCall",
@@ -308,21 +581,12 @@ namespace OyemCore.Backend.Controllers
                     gonderenSicilNo = cleanCaller,
                     roomUrl = dto.RoomUrl,
                     callType = dto.CallType
-                },
-                channelId: "incoming_call_v2"
+                }
             );
-
-            // Android'de uygulama tamamen kapalıyken de native tam ekran arama arayüzünü açabilmek
-            // için ayrıca data-only FCM mesajı (Expo push'un YANINDA, onun yerine değil).
-            try
-            {
-                await _pushService.SendCallWakeAsync(cleanTarget, cleanCaller, dto.CallerName, dto.RoomUrl, dto.CallType, cleanCaller + ".jpg");
-            }
-            catch { }
 
             // Mobil uygulama o an açık/bağlıysa push'u beklemeden anında zil çalsın diye kendi hub'ındaki
             // bağlantılara da ilet (bkz. ChatHub.StartCall aynı davranış).
-            foreach (var connId in ChatHub.ConnectionsFor(cleanTarget))
+            foreach (var connId in ChatHub.ConnectionsFor(_tenantService.GetCurrentTenantId(), cleanTarget))
                 await _chatHub.Clients.Client(connId).SendAsync("incomingCall", cleanCaller, dto.CallerName, dto.RoomUrl, dto.CallType, cleanCaller + ".jpg");
 
             return Ok(new { success = true });
@@ -339,7 +603,7 @@ namespace OyemCore.Backend.Controllers
 
             var conversationCode = string.IsNullOrEmpty(dto.ConversationCode) ? dto.ReaderSicilNo : dto.ConversationCode;
 
-            foreach (var connId in ChatHub.ConnectionsFor(dto.NotifyTargetSicilNo))
+            foreach (var connId in ChatHub.ConnectionsFor(_tenantService.GetCurrentTenantId(), dto.NotifyTargetSicilNo))
             {
                 await _chatHub.Clients.Client(connId).SendAsync("messagesRead", dto.ReaderSicilNo, conversationCode);
             }

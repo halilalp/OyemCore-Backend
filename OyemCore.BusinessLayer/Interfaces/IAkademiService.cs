@@ -3,6 +3,15 @@ using System.Collections.Generic;
 
 namespace OyemCore.BusinessLayer.Interfaces
 {
+    // UpdateProgress'in sonucu — istemci, sonraki tam yeniden yuklemeyi beklemeden
+    // (ekran kapat/ac) tamamlanma durumunu aninda yansitabilsin diye eklendi.
+    public class AkademiProgressResult
+    {
+        public bool Success { get; set; }
+        public bool TamamlandiMi { get; set; }
+        public int MaxIzlenenSaniye { get; set; }
+    }
+
     // Akademi — Faz 1: içerik yönetimi, atama, gerçek izleme takibi.
     // tb_Egitim/tb_EgitimKategori'ye (mevcut "Eğitimler" kaynak havuzu) kasıtlı olarak dokunmuyor.
     public interface IAkademiService
@@ -19,7 +28,7 @@ namespace OyemCore.BusinessLayer.Interfaces
         // Personel tarafı (web + mobil ortak)
         IEnumerable<object> GetMyAssignments(string sicilNo);
         object GetAssignmentDetail(int atamaID, string sicilNo);
-        bool UpdateProgress(int atamaID, string sicilNo, int maxIzlenenSaniye, int aktifIzlemeSaniyeArtis, bool tamamlaZorla = false);
+        AkademiProgressResult UpdateProgress(int atamaID, string sicilNo, int maxIzlenenSaniye, int aktifIzlemeSaniyeArtis, bool tamamlaZorla = false);
 
         // İK raporlama
         IEnumerable<object> GetAssignmentReport(int akademiEgitimID);
@@ -45,6 +54,12 @@ namespace OyemCore.BusinessLayer.Interfaces
         // Sınav oturumu (personel tarafı — web + mobil ortak, tek-oturum kilidi)
         object GetExamBrief(int atamaID, string sicilNo);
         object RequestExamRetry(int atamaID, string sicilNo, string sebep);
+
+        // AKADEMI admin: ek sınav hakkı talepleri (onay/red — mobil + WebPortal ortak veri)
+        IEnumerable<object> GetPendingExamRetryRequests(string sicilNo);
+        object ApproveExamRetryRequest(int talepID, string sicilNo);
+        object RejectExamRetryRequest(int talepID, string sicilNo, string redSebebi);
+
         object StartOrResumeExam(int atamaID, string sicilNo);
         object SubmitAnswer(int atamaID, string sicilNo, string secilenSecenek);
         bool ReportTabSwitch(int atamaID, string sicilNo);

@@ -281,6 +281,7 @@ namespace OyemCore.Backend.Controllers
                 var aygit = _context.tb_Aygit.FirstOrDefault(a => a.AygitID == model.AygitId);
                 if (aygit == null) return NotFound(new { message = "Demirbas bulunamadi." });
                 if (aygit.HurdaDurum == true) return BadRequest(new { message = "Bu demirbas hurda durumundadir, zimmetlenemez." });
+                if (aygit.BakimDurumu == true) return BadRequest(new { message = "Bu demirbas su anda bakim/tamir surecinde, zimmetlenemez." });
                 if (aygit.Durum == false) return BadRequest(new { message = "Bu demirbas zaten baska bir personele zimmetlidir." });
 
                 var targetPersonel = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == model.SicilNo);
@@ -658,6 +659,660 @@ namespace OyemCore.Backend.Controllers
             catch (Exception ex)
             {
                 return BadRequest(new { message = $"Sayimdan çıkarilirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        // Dosya yukleme icin ayri bir uc nokta gerekmiyor — hurda kaniti ve bakim/tamir ekleri
+        // mevcut genel /talep/upload-file uc noktasini (TalepController.UploadFile) module=ZIMMET
+        // ile kullanir (bkz. TenantService.GetModulPath "ZIMMET" -> "Zimmet/Docs"; mobil tarafta
+        // pickAndUploadFile('ZIMMET', source) ile cagrilir).
+
+        // ====================================================================
+        // PERSONEL DEMIRBAS GECMISI
+        // ====================================================================
+
+        [HttpGet("person-history/{sicilNo}")]
+        public IActionResult GetPersonAssetHistory(string sicilNo)
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+                if (!IsZimmetManager(currentUser)) return Forbid();
+
+                var history = (from ap in _context.tb_AygitPersonel
+                               join a in _context.tb_Aygit on ap.AygitID equals a.AygitID
+                               where ap.PersonelSicil == sicilNo
+                               orderby ap.TeslimEtTar descending
+                               select new
+                               {
+                                   ap.AygitPersonelID,
+                                   ap.AygitID,
+                                   a.Tanim,
+                                   a.DemirbasKodu,
+                                   AygitKategoriID = a.AygitKategoriID,
+                                   a.HurdaDurum,
+                                   a.AktifAygit,
+                                   TeslimEtTar = ap.TeslimEtTar,
+                                   TeslimAlTar = ap.TeslimAlTar,
+                                   ap.Aciklama
+                               }).ToList();
+
+                var kategoriler = _context.tb_AygitKategori.AsNoTracking().ToDictionary(k => k.AygitKategoriID, k => k.Tanim);
+
+                var result = history.Select(h =>
+                {
+                    DateTime? bitis = h.TeslimAlTar;
+                    TimeSpan kullanimSuresi = (bitis ?? DateTime.Now) - (h.TeslimEtTar ?? DateTime.Now);
+                    string satirDurumu = h.HurdaDurum == true ? "Demirbas Hurdaya Ayrilmis"
+                        : (h.TeslimAlTar == null ? "Hala Kullanimda" : "Iade Edildi");
+
+                    return new
+                    {
+                        h.AygitPersonelID,
+                        h.AygitID,
+                        h.Tanim,
+                        h.DemirbasKodu,
+                        Kategori = kategoriler.TryGetValue(h.AygitKategoriID ?? 0, out var kat) ? kat : "",
+                        TeslimEtTarStr = h.TeslimEtTar?.ToString("dd.MM.yyyy HH:mm") ?? "",
+                        TeslimAlTarStr = h.TeslimAlTar?.ToString("dd.MM.yyyy HH:mm") ?? "",
+                        KullanimGunSayisi = (int)kullanimSuresi.TotalDays,
+                        SatirDurumu = satirDurumu,
+                        h.Aciklama
+                    };
+                }).ToList();
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Personel demirbas gecmisi alinirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        // ====================================================================
+        // ADMIN: HURDA ONAYLAYICILARI + BAKIM TURLERI
+        // ====================================================================
+
+        private bool IsYonetici(tb_Kullanici user) => user.Yonetici == true || user.KullaniciAdi == "admin";
+
+        [HttpGet("hurda-onaylayicilar")]
+        public IActionResult GetHurdaOnaylayicilar()
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+                if (!IsYonetici(currentUser)) return Forbid();
+
+                var list = (from o in _context.tb_DemirbasHurdaOnaylayici.AsNoTracking()
+                            where o.AktifMi
+                            join p in _context.tb_Personel.AsNoTracking() on o.SicilNo equals p.SicilNo into ps
+                            from p in ps.DefaultIfEmpty()
+                            select new { o.OnaylayiciID, o.SicilNo, AdSoyad = p != null ? p.AdSoyad : o.SicilNo })
+                            .ToList();
+                return Ok(list);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Onaylayici listesi alinirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        public class HurdaOnaylayiciKaydetModel
+        {
+            public List<string> SicilNolar { get; set; }
+        }
+
+        [HttpPost("hurda-onaylayicilar")]
+        public IActionResult SaveHurdaOnaylayicilar([FromBody] HurdaOnaylayiciKaydetModel model)
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+                if (!IsYonetici(currentUser)) return Forbid();
+
+                var sicilNolar = (model?.SicilNolar ?? new List<string>()).Where(s => !string.IsNullOrWhiteSpace(s)).Distinct().ToList();
+                if (sicilNolar.Count > 3)
+                {
+                    return BadRequest(new { message = "En fazla 3 onaylayici secilebilir." });
+                }
+
+                // Mevcut aktif listeyi pasiflestir, yeni seciimi ekle — basit "replace" deseni.
+                var mevcut = _context.tb_DemirbasHurdaOnaylayici.Where(o => o.AktifMi).ToList();
+                foreach (var m in mevcut) m.AktifMi = false;
+
+                foreach (var sicil in sicilNolar)
+                {
+                    _context.tb_DemirbasHurdaOnaylayici.Add(new tb_DemirbasHurdaOnaylayici
+                    {
+                        SicilNo = sicil,
+                        AktifMi = true,
+                        EklenmeTarihi = DateTime.Now
+                    });
+                }
+
+                _context.SaveChanges();
+                return Ok(new { success = true, message = "Hurda onaylayicilari kaydedildi." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Onaylayicilar kaydedilirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        [HttpGet("bakim-turleri")]
+        public IActionResult GetBakimTurleri()
+        {
+            try
+            {
+                var list = _context.tb_AygitBakimTuru.AsNoTracking()
+                    .Where(t => t.AktifMi)
+                    .OrderBy(t => t.Sira ?? int.MaxValue).ThenBy(t => t.Tanim)
+                    .Select(t => new { t.TuruID, t.Tanim })
+                    .ToList();
+                return Ok(list);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Bakim turleri alinirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        public class BakimTuruKaydetModel
+        {
+            public string Tanim { get; set; }
+        }
+
+        [HttpPost("bakim-turleri")]
+        public IActionResult SaveBakimTuru([FromBody] BakimTuruKaydetModel model)
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+                if (!IsYonetici(currentUser)) return Forbid();
+                if (string.IsNullOrWhiteSpace(model?.Tanim)) return BadRequest(new { message = "Islem turu adi bos olamaz." });
+
+                int maxSira = _context.tb_AygitBakimTuru.Select(t => (int?)t.Sira).Max() ?? 0;
+                var turu = new tb_AygitBakimTuru { Tanim = model.Tanim.Trim(), AktifMi = true, Sira = maxSira + 1 };
+                _context.tb_AygitBakimTuru.Add(turu);
+                _context.SaveChanges();
+                return Ok(new { success = true, turuID = turu.TuruID });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Islem turu kaydedilirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        [HttpPost("bakim-turleri/{id}/pasiflestir")]
+        public IActionResult DeactivateBakimTuru(int id)
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+                if (!IsYonetici(currentUser)) return Forbid();
+
+                var turu = _context.tb_AygitBakimTuru.FirstOrDefault(t => t.TuruID == id);
+                if (turu == null) return NotFound(new { message = "Islem turu bulunamadi." });
+                turu.AktifMi = false;
+                _context.SaveChanges();
+                return Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Islem turu pasiflestirilirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        // ====================================================================
+        // HURDA SURECI — COK ONAYLI, PARALEL KARAR
+        // ====================================================================
+
+        public class HurdaTalepModel
+        {
+            public string Sebep { get; set; }
+            public List<string> DosyaUrls { get; set; }
+        }
+
+        [HttpPost("asset/{id}/hurda-talep")]
+        public IActionResult CreateHurdaTalep(int id, [FromBody] HurdaTalepModel model)
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+                if (!IsZimmetManager(currentUser)) return Forbid();
+
+                if (string.IsNullOrWhiteSpace(model?.Sebep)) return BadRequest(new { message = "Hurdaya ayirma sebebi zorunludur." });
+                var dosyaUrls = (model.DosyaUrls ?? new List<string>()).Where(u => !string.IsNullOrWhiteSpace(u)).Take(3).ToList();
+
+                var aygit = _context.tb_Aygit.FirstOrDefault(a => a.AygitID == id);
+                if (aygit == null) return NotFound(new { message = "Demirbas bulunamadi." });
+                if (aygit.HurdaDurum == true) return BadRequest(new { message = "Bu demirbas zaten hurdaya ayrilmis." });
+
+                var mevcutBekleyen = _context.tb_DemirbasHurdaTalep.Any(t => t.AygitID == id && t.Durum == "BEKLEMEDE");
+                if (mevcutBekleyen) return BadRequest(new { message = "Bu demirbas icin zaten bekleyen bir hurda talebi var." });
+
+                var onaylayicilar = _context.tb_DemirbasHurdaOnaylayici.Where(o => o.AktifMi).Select(o => o.SicilNo).ToList();
+                if (onaylayicilar.Count == 0) return BadRequest(new { message = "Hurda onaylayicisi tanimli degil — once Admin > Demirbas Ayarlari'ndan onaylayici secilmeli." });
+
+                var talep = new tb_DemirbasHurdaTalep
+                {
+                    AygitID = id,
+                    TalepEdenSicil = currentUser.SicilNo,
+                    Sebep = model.Sebep.Trim(),
+                    TalepTarihi = DateTime.Now,
+                    Durum = "BEKLEMEDE"
+                };
+                _context.tb_DemirbasHurdaTalep.Add(talep);
+                _context.SaveChanges();
+
+                foreach (var url in dosyaUrls)
+                {
+                    _context.tb_DemirbasHurdaDosya.Add(new tb_DemirbasHurdaDosya
+                    {
+                        HurdaTalepID = talep.HurdaTalepID,
+                        DosyaUrl = url,
+                        DosyaAdi = System.IO.Path.GetFileName(url)
+                    });
+                }
+
+                // Snapshot — o anki aktif onaylayicilar bu talebe sabitlenir.
+                foreach (var sicil in onaylayicilar)
+                {
+                    _context.tb_DemirbasHurdaOnay.Add(new tb_DemirbasHurdaOnay
+                    {
+                        HurdaTalepID = talep.HurdaTalepID,
+                        OnaylayanSicil = sicil,
+                        Durum = "BEKLEMEDE"
+                    });
+                }
+                _context.SaveChanges();
+
+                string demirbasAd = string.IsNullOrEmpty(aygit.DemirbasKodu) ? aygit.Tanim : $"{aygit.Tanim} ({aygit.DemirbasKodu})";
+                foreach (var sicil in onaylayicilar)
+                {
+                    _ = _pushNotificationService.SendToUserBySicilNoAsync(
+                        sicil,
+                        "Hurda Onayi Bekleniyor",
+                        $"{currentUser.AdSoyad} tarafindan '{demirbasAd}' icin hurda talebi acildi, onayiniz bekleniyor.",
+                        new { type = "demirbasHurda", screen = "HurdaOnaylarimScreen", id = talep.HurdaTalepID }
+                    );
+                }
+
+                return Ok(new { success = true, hurdaTalepID = talep.HurdaTalepID, message = "Hurda talebi olusturuldu, onaylayicilara bildirim gonderildi." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Hurda talebi olusturulurken hata olustu: {ex.Message}" });
+            }
+        }
+
+        [HttpGet("hurda-onaylarim")]
+        public IActionResult GetHurdaOnaylarim()
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+
+                var list = (from onay in _context.tb_DemirbasHurdaOnay.AsNoTracking()
+                            join talep in _context.tb_DemirbasHurdaTalep.AsNoTracking() on onay.HurdaTalepID equals talep.HurdaTalepID
+                            join aygit in _context.tb_Aygit.AsNoTracking() on talep.AygitID equals aygit.AygitID
+                            where onay.OnaylayanSicil == currentUser.SicilNo && onay.Durum == "BEKLEMEDE" && talep.Durum == "BEKLEMEDE"
+                            orderby talep.TalepTarihi descending
+                            select new
+                            {
+                                onay.OnayID,
+                                talep.HurdaTalepID,
+                                talep.AygitID,
+                                aygit.Tanim,
+                                aygit.DemirbasKodu,
+                                talep.Sebep,
+                                talep.TalepEdenSicil,
+                                TalepEdenAdSoyad = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == talep.TalepEdenSicil).AdSoyad,
+                                talep.TalepTarihi
+                            }).ToList();
+
+                var talepIDs = list.Select(l => l.HurdaTalepID).Distinct().ToList();
+                var dosyalar = _context.tb_DemirbasHurdaDosya.AsNoTracking()
+                    .Where(d => talepIDs.Contains(d.HurdaTalepID))
+                    .ToList()
+                    .GroupBy(d => d.HurdaTalepID)
+                    .ToDictionary(g => g.Key, g => g.Select(d => new { d.DosyaUrl, d.DosyaAdi }).ToList());
+
+                var result = list.Select(l => new
+                {
+                    l.OnayID,
+                    l.HurdaTalepID,
+                    l.AygitID,
+                    l.Tanim,
+                    l.DemirbasKodu,
+                    l.Sebep,
+                    l.TalepEdenAdSoyad,
+                    TalepTarihiStr = l.TalepTarihi.ToString("dd.MM.yyyy HH:mm"),
+                    Dosyalar = dosyalar.TryGetValue(l.HurdaTalepID, out var dl) ? (object)dl : new List<object>()
+                });
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Bekleyen hurda onaylari alinirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        public class HurdaKararModel
+        {
+            public bool Onay { get; set; }
+            public string RedSebebi { get; set; }
+        }
+
+        [HttpPost("hurda-onay/{onayId}/karar")]
+        public IActionResult DecideHurdaOnay(int onayId, [FromBody] HurdaKararModel model)
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+
+                var onay = _context.tb_DemirbasHurdaOnay.FirstOrDefault(o => o.OnayID == onayId);
+                if (onay == null) return NotFound(new { message = "Onay kaydi bulunamadi." });
+                if (onay.OnaylayanSicil != currentUser.SicilNo) return Forbid();
+                if (onay.Durum != "BEKLEMEDE") return BadRequest(new { message = "Bu onay zaten karara baglanmis." });
+
+                var talep = _context.tb_DemirbasHurdaTalep.FirstOrDefault(t => t.HurdaTalepID == onay.HurdaTalepID);
+                if (talep == null) return NotFound(new { message = "Hurda talebi bulunamadi." });
+                if (talep.Durum != "BEKLEMEDE") return BadRequest(new { message = "Bu talep zaten sonuclanmis." });
+
+                if (!model.Onay && string.IsNullOrWhiteSpace(model.RedSebebi))
+                {
+                    return BadRequest(new { message = "Red icin aciklama zorunludur." });
+                }
+
+                onay.Durum = model.Onay ? "ONAY" : "RET";
+                onay.RedSebebi = model.Onay ? null : model.RedSebebi.Trim();
+                onay.KararTarihi = DateTime.Now;
+                _context.SaveChanges();
+
+                var aygit = _context.tb_Aygit.FirstOrDefault(a => a.AygitID == talep.AygitID);
+                string demirbasAd = aygit != null ? (string.IsNullOrEmpty(aygit.DemirbasKodu) ? aygit.Tanim : $"{aygit.Tanim} ({aygit.DemirbasKodu})") : "";
+
+                if (!model.Onay)
+                {
+                    talep.Durum = "REDDEDILDI";
+                    talep.TamamlanmaTarihi = DateTime.Now;
+                    _context.SaveChanges();
+
+                    _ = _pushNotificationService.SendToUserBySicilNoAsync(
+                        talep.TalepEdenSicil,
+                        "Hurda Talebi Reddedildi",
+                        $"'{demirbasAd}' icin hurda talebiniz {currentUser.AdSoyad} tarafindan reddedildi: {onay.RedSebebi}",
+                        new { type = "demirbasHurda", screen = "DemirbasYonetimScreen", id = talep.AygitID }
+                    );
+
+                    return Ok(new { success = true, sonuc = "REDDEDILDI", message = "Talep reddedildi." });
+                }
+
+                bool hepsiOnayladi = !_context.tb_DemirbasHurdaOnay.Any(o => o.HurdaTalepID == talep.HurdaTalepID && o.Durum != "ONAY");
+                if (hepsiOnayladi)
+                {
+                    talep.Durum = "ONAYLANDI";
+                    talep.TamamlanmaTarihi = DateTime.Now;
+                    if (aygit != null) aygit.HurdaDurum = true;
+                    _context.SaveChanges();
+
+                    _ = _pushNotificationService.SendToUserBySicilNoAsync(
+                        talep.TalepEdenSicil,
+                        "Hurda Talebi Onaylandi",
+                        $"'{demirbasAd}' tum onaylayicilar tarafindan onaylandi ve hurdaya ayrildi.",
+                        new { type = "demirbasHurda", screen = "DemirbasYonetimScreen", id = talep.AygitID }
+                    );
+
+                    return Ok(new { success = true, sonuc = "ONAYLANDI", message = "Tum onaylar tamamlandi, demirbas hurdaya ayrildi." });
+                }
+
+                return Ok(new { success = true, sonuc = "BEKLEMEDE", message = "Karariniz kaydedildi, diger onaylayicilar bekleniyor." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Karar kaydedilirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        [HttpGet("asset/{id}/hurda-gecmisi")]
+        public IActionResult GetHurdaGecmisi(int id)
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+                if (!IsZimmetManager(currentUser)) return Forbid();
+
+                var talepler = _context.tb_DemirbasHurdaTalep.AsNoTracking()
+                    .Where(t => t.AygitID == id)
+                    .OrderByDescending(t => t.TalepTarihi)
+                    .ToList();
+
+                var talepIDs = talepler.Select(t => t.HurdaTalepID).ToList();
+                var onaylar = _context.tb_DemirbasHurdaOnay.AsNoTracking()
+                    .Where(o => talepIDs.Contains(o.HurdaTalepID)).ToList()
+                    .GroupBy(o => o.HurdaTalepID)
+                    .ToDictionary(g => g.Key, g => g.Select(o => new
+                    {
+                        o.OnaylayanSicil,
+                        AdSoyad = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == o.OnaylayanSicil).AdSoyad,
+                        o.Durum,
+                        o.RedSebebi
+                    }).ToList());
+
+                var result = talepler.Select(t => new
+                {
+                    t.HurdaTalepID,
+                    t.Sebep,
+                    TalepEdenAdSoyad = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == t.TalepEdenSicil).AdSoyad,
+                    TalepTarihiStr = t.TalepTarihi.ToString("dd.MM.yyyy HH:mm"),
+                    t.Durum,
+                    Onaylar = onaylar.TryGetValue(t.HurdaTalepID, out var ol) ? (object)ol : new List<object>()
+                });
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Hurda gecmisi alinirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        // ====================================================================
+        // BAKIM & TAMIR TAKIBI
+        // ====================================================================
+
+        public class BakimaGonderModel
+        {
+            public int TuruID { get; set; }
+            public string Aciklama { get; set; }
+            public string ServisFirma { get; set; }
+            public List<string> DosyaUrls { get; set; }
+        }
+
+        [HttpPost("asset/{id}/bakima-gonder")]
+        public IActionResult SendAssetToMaintenance(int id, [FromBody] BakimaGonderModel model)
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+                if (!IsZimmetManager(currentUser)) return Forbid();
+
+                var aygit = _context.tb_Aygit.FirstOrDefault(a => a.AygitID == id);
+                if (aygit == null) return NotFound(new { message = "Demirbas bulunamadi." });
+                if (aygit.HurdaDurum == true) return BadRequest(new { message = "Bu demirbas hurda durumundadir." });
+                if (aygit.BakimDurumu == true) return BadRequest(new { message = "Bu demirbas zaten bakim/tamir surecinde." });
+
+                var turu = _context.tb_AygitBakimTuru.AsNoTracking().FirstOrDefault(t => t.TuruID == model.TuruID);
+                if (turu == null) return BadRequest(new { message = "Gecersiz islem turu." });
+
+                // Zimmetliyse once iade alinir (hurda akisindaki gibi) — gecmis korunur. Kimde oldugu
+                // (OncekiZimmetliSicil) hatirlanir ki tamamlaninca "ayni kullaniciya geri zimmetle"
+                // secenegi sunulabilsin (ör. yillik bakim/format sonrasi notebook sahibine geri verilir).
+                string oncekiZimmetliSicil = null;
+                if (aygit.Durum == false)
+                {
+                    oncekiZimmetliSicil = aygit.ZimmetliSicil;
+                    var activeHistory = _context.tb_AygitPersonel
+                        .FirstOrDefault(ap => ap.AygitID == id && ap.PersonelSicil == oncekiZimmetliSicil && ap.TeslimAlTar == null);
+                    if (activeHistory != null)
+                    {
+                        activeHistory.TeslimAlTar = DateTime.Now;
+                        activeHistory.TeslimAlanSicil = currentUser.SicilNo;
+                        activeHistory.Aciklama += " | Bakim/tamir icin iade alindi";
+                    }
+                    aygit.ZimmetliSicil = "";
+                    aygit.Durum = true;
+                }
+
+                aygit.BakimDurumu = true;
+
+                var bakim = new tb_AygitBakim
+                {
+                    AygitID = id,
+                    TuruID = model.TuruID,
+                    BaslangicTar = DateTime.Now,
+                    Durum = "SERVISTE",
+                    Aciklama = model.Aciklama,
+                    ServisFirma = model.ServisFirma,
+                    IslemYapanSicil = currentUser.SicilNo,
+                    KayitTar = DateTime.Now,
+                    OncekiZimmetliSicil = oncekiZimmetliSicil
+                };
+                _context.tb_AygitBakim.Add(bakim);
+                _context.SaveChanges();
+
+                foreach (var url in (model.DosyaUrls ?? new List<string>()).Where(u => !string.IsNullOrWhiteSpace(u)))
+                {
+                    _context.tb_AygitBakimDosya.Add(new tb_AygitBakimDosya
+                    {
+                        BakimID = bakim.BakimID,
+                        DosyaUrl = url,
+                        DosyaAdi = System.IO.Path.GetFileName(url)
+                    });
+                }
+                _context.SaveChanges();
+
+                return Ok(new { success = true, bakimID = bakim.BakimID, message = $"Demirbas '{turu.Tanim}' icin servise gonderildi." });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Bakima gonderilirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        public class BakimTamamlaModel
+        {
+            public string SonucAciklama { get; set; }
+            public decimal? Maliyet { get; set; }
+            public bool GeriZimmetle { get; set; } // true ise OncekiZimmetliSicil'e otomatik tekrar zimmetlenir
+        }
+
+        [HttpPost("bakim/{id}/tamamla")]
+        public IActionResult CompleteMaintenance(int id, [FromBody] BakimTamamlaModel model)
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+                if (!IsZimmetManager(currentUser)) return Forbid();
+
+                var bakim = _context.tb_AygitBakim.FirstOrDefault(b => b.BakimID == id);
+                if (bakim == null) return NotFound(new { message = "Bakim kaydi bulunamadi." });
+                if (bakim.Durum != "SERVISTE") return BadRequest(new { message = "Bu bakim kaydi zaten sonuclanmis." });
+
+                bakim.Durum = "TAMAMLANDI";
+                bakim.BitisTar = DateTime.Now;
+                bakim.SonucAciklama = model.SonucAciklama;
+                bakim.Maliyet = model.Maliyet;
+
+                var aygit = _context.tb_Aygit.FirstOrDefault(a => a.AygitID == bakim.AygitID);
+                if (aygit != null) aygit.BakimDurumu = false;
+
+                string mesaj = "Bakim/tamir tamamlandi, demirbas tekrar kullanilabilir.";
+
+                // Ayni kullaniciya geri zimmetle — IT'nin cihazi alip (yillik bakim/format vb.) SAHIBINE
+                // geri verdigi, "boşta" havuzuna dusmeden dogrudan onceki kullaniciya donmesi gereken
+                // en yaygin senaryo. AssignAsset ile AYNI desen (gecmis satiri + push).
+                if (model.GeriZimmetle && aygit != null && !string.IsNullOrEmpty(bakim.OncekiZimmetliSicil))
+                {
+                    var targetPersonel = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == bakim.OncekiZimmetliSicil);
+                    if (targetPersonel != null)
+                    {
+                        aygit.ZimmetliSicil = bakim.OncekiZimmetliSicil;
+                        aygit.Durum = false;
+
+                        var apLog = new tb_AygitPersonel
+                        {
+                            AygitID = aygit.AygitID,
+                            PersonelSicil = bakim.OncekiZimmetliSicil,
+                            PersonelAdSoyad = !string.IsNullOrEmpty(targetPersonel.AdSoyad) && targetPersonel.AdSoyad.Length > 100
+                                ? targetPersonel.AdSoyad.Substring(0, 100)
+                                : (targetPersonel.AdSoyad ?? ""),
+                            TeslimEtTar = DateTime.Now,
+                            TeslimEdenSicil = currentUser.SicilNo,
+                            Aciklama = "Bakim/tamir sonrasi ayni kullaniciya geri zimmetlendi."
+                        };
+                        _context.tb_AygitPersonel.Add(apLog);
+                        _context.SaveChanges();
+
+                        _ = _pushNotificationService.NotifyAssetAssignedAsync(apLog.AygitPersonelID);
+                        mesaj = $"Bakim/tamir tamamlandi, demirbas {targetPersonel.AdSoyad} kullanicisina geri zimmetlendi.";
+                    }
+                }
+
+                _context.SaveChanges();
+                return Ok(new { success = true, message = mesaj });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Bakim tamamlanirken hata olustu: {ex.Message}" });
+            }
+        }
+
+        [HttpGet("asset/{id}/bakim-gecmisi")]
+        public IActionResult GetMaintenanceHistory(int id)
+        {
+            try
+            {
+                var currentUser = GetCurrentUser();
+                if (!IsZimmetManager(currentUser)) return Forbid();
+
+                var turler = _context.tb_AygitBakimTuru.AsNoTracking().ToDictionary(t => t.TuruID, t => t.Tanim);
+
+                var bakimlar = _context.tb_AygitBakim.AsNoTracking()
+                    .Where(b => b.AygitID == id)
+                    .OrderByDescending(b => b.BaslangicTar)
+                    .ToList();
+
+                var bakimIDs = bakimlar.Select(b => b.BakimID).ToList();
+                var dosyalar = _context.tb_AygitBakimDosya.AsNoTracking()
+                    .Where(d => bakimIDs.Contains(d.BakimID)).ToList()
+                    .GroupBy(d => d.BakimID)
+                    .ToDictionary(g => g.Key, g => g.Select(d => new { d.DosyaUrl, d.DosyaAdi }).ToList());
+
+                var result = bakimlar.Select(b => new
+                {
+                    b.BakimID,
+                    IslemTuru = turler.TryGetValue(b.TuruID, out var tn) ? tn : "",
+                    BaslangicTarStr = b.BaslangicTar.ToString("dd.MM.yyyy HH:mm"),
+                    BitisTarStr = b.BitisTar?.ToString("dd.MM.yyyy HH:mm") ?? "",
+                    b.Durum,
+                    b.Aciklama,
+                    b.ServisFirma,
+                    b.Maliyet,
+                    b.SonucAciklama,
+                    IslemYapanAdSoyad = _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == b.IslemYapanSicil).AdSoyad,
+                    b.OncekiZimmetliSicil,
+                    OncekiZimmetliAdSoyad = string.IsNullOrEmpty(b.OncekiZimmetliSicil) ? null : _context.tb_Personel.AsNoTracking().FirstOrDefault(p => p.SicilNo == b.OncekiZimmetliSicil).AdSoyad,
+                    Dosyalar = dosyalar.TryGetValue(b.BakimID, out var dl) ? (object)dl : new List<object>()
+                });
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = $"Bakim gecmisi alinirken hata olustu: {ex.Message}" });
             }
         }
     }

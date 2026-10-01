@@ -127,8 +127,8 @@ namespace OyemCore.Backend.Controllers
         {
             try
             {
-                bool success = _akademiService.UpdateProgress(atamaId, GetCurrentSicilNo(), req.MaxIzlenenSaniye, req.AktifIzlemeSaniyeArtis, req.TamamlaZorla);
-                return Ok(new { success });
+                var result = _akademiService.UpdateProgress(atamaId, GetCurrentSicilNo(), req.MaxIzlenenSaniye, req.AktifIzlemeSaniyeArtis, req.TamamlaZorla);
+                return Ok(new { success = result.Success, tamamlandiMi = result.TamamlandiMi, maxIzlenenSaniye = result.MaxIzlenenSaniye });
             }
             catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
@@ -225,6 +225,33 @@ namespace OyemCore.Backend.Controllers
         public IActionResult RequestExamRetry(int atamaId, [FromBody] AkademiExamRetryRequest req)
         {
             try { return Ok(_akademiService.RequestExamRetry(atamaId, GetCurrentSicilNo(), req?.Sebep ?? "")); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        // ── AKADEMI admin: ek sınav hakkı talepleri (mobil onay/red — WebPortal Akademi/Default.html
+        // ile aynı tb_AkademiSinavTalep verisi, yetki kontrolü AdminBelgeTuruHelper.HasYetki(...,"AKADEMI") ──
+
+        [HttpGet("exam/retry-requests")]
+        public IActionResult GetExamRetryRequests()
+        {
+            try { return Ok(_akademiService.GetPendingExamRetryRequests(GetCurrentSicilNo())); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpPost("exam/retry-requests/{talepId}/approve")]
+        public IActionResult ApproveExamRetryRequest(int talepId)
+        {
+            try { return Ok(_akademiService.ApproveExamRetryRequest(talepId, GetCurrentSicilNo())); }
+            catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
+            catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
+        }
+
+        [HttpPost("exam/retry-requests/{talepId}/reject")]
+        public IActionResult RejectExamRetryRequest(int talepId, [FromBody] AkademiExamRetryRejectRequest req)
+        {
+            try { return Ok(_akademiService.RejectExamRetryRequest(talepId, GetCurrentSicilNo(), req?.RedSebebi ?? "")); }
             catch (UnauthorizedAccessException ex) { return Forbid(ex.Message); }
             catch (Exception ex) { return BadRequest(new { message = ex.Message }); }
         }
@@ -379,5 +406,10 @@ namespace OyemCore.Backend.Controllers
     public class AkademiExamRetryRequest
     {
         public string Sebep { get; set; }
+    }
+
+    public class AkademiExamRetryRejectRequest
+    {
+        public string RedSebebi { get; set; }
     }
 }

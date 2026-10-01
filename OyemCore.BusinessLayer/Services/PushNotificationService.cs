@@ -16,6 +16,12 @@ namespace OyemCore.BusinessLayer.Services
 {
     public class PushNotificationService : IPushNotificationService
     {
+        // TEŞHİS: InternalNotifyController.Version()'dan da okunuyor — Controller (OyemCore.Backend.dll)
+        // ve BusinessLayer (bu dosyanın derlendiği DLL) AYRI dosyalar olduğu için, deploy sırasında
+        // biri güncellenip diğeri unutulabiliyor (2026-09-22'de tam bu yaşandı). Tek istekle ikisinin
+        // de gerçekten güncel olup olmadığını ayırt edebilmek için.
+        public const string BuildMarker = "BL-2026-09-24-CHATHUB-QUERYSTRING-TENANT";
+
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly HttpClient _httpClient;
         private readonly ILogger<PushNotificationService> _logger;
@@ -39,6 +45,19 @@ namespace OyemCore.BusinessLayer.Services
                 using (var scope = _scopeFactory.CreateScope())
                 {
                     var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+
+                    // KESIN KURAL: pasif kullaniciya push gitmemeli — gorusme arama-uyandirma push'u da dahil.
+                    var aliciDurum = await context.tb_Kullanici
+                        .AsNoTracking()
+                        .Where(u => u.SicilNo == sicilNo)
+                        .Select(u => (bool?)u.Durum)
+                        .FirstOrDefaultAsync();
+                    if (aliciDurum != true)
+                    {
+                        LogPush(context, "PUSH-NOT-SKIP-PASIF", $"SicilNo {sicilNo} pasif (veya bulunamadi) oldugu icin arama-uyandirma push'u gonderilmedi.");
+                        return;
+                    }
+
                     List<(string PushToken, string DeviceType)> devices;
                     try
                     {
@@ -56,25 +75,53 @@ namespace OyemCore.BusinessLayer.Services
                         devices = new List<(string, string)>();
                     }
 
+                    if (devices.Count == 0)
+                    {
+                        // "Görüntülü arama bildirimi kapalıyken hiç gelmiyor" teşhisinde en sık atlanan
+                        // ihtimal budur: cihazin VoIP token'i hic kayitli degil (native taraf henuz
+                        // kaydetmemis/eski build) — bu satir olmadan sessizce hicbir sey gonderilmiyordu.
+                        LogPush(context, "CALL-PUSH-SKIP", $"SicilNo {sicilNo} icin FcmVoip/ApnsVoipProduction/ApnsVoipSandbox turunde kayitli cihaz yok.");
+                    }
+
                     foreach (var device in devices)
                     {
                         if (string.IsNullOrEmpty(device.PushToken)) continue;
 
+                        (bool Success, string Detail) result;
                         if (device.DeviceType == "FcmVoip")
                         {
-                            await _fcmVoip.SendCallWakeAsync(device.PushToken, callerSicilNo, callerName, roomUrl, callType, callerImage);
+                            result = await _fcmVoip.SendCallWakeAsync(device.PushToken, callerSicilNo, callerName, roomUrl, callType, callerImage);
                         }
                         else
                         {
                             bool isProduction = device.DeviceType == "ApnsVoipProduction";
-                            await _apnsVoip.SendCallWakeAsync(device.PushToken, isProduction, callerSicilNo, callerName, roomUrl, callType, callerImage);
+                            result = await _apnsVoip.SendCallWakeAsync(device.PushToken, isProduction, callerSicilNo, callerName, roomUrl, callType, callerImage);
                         }
+
+                        // VoIP push dusuk hacimli/kritik oldugundan basarili denemeler de loglaniyor
+                        // (normal Expo push'taki "sadece hata" kuralindan farkli olarak) — gorusme
+                        // bildirimi gelmedi sikayetinde gercekte gonderilip gonderilmedigini gormek icin.
+                        LogPush(context, result.Success ? "CALL-PUSH-OK" : "CALL-PUSH-ERROR",
+                            $"SicilNo: {sicilNo}, DeviceType: {device.DeviceType}, Arayan: {callerSicilNo}, Detay: {result.Detail}");
                     }
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "PushNotificationService: SendCallWakeAsync failed for SicilNo {SicilNo}", sicilNo);
+                // KOK NEDEN (2026-09-22): bu dis catch SADECE ILogger'a yaziyordu (bu ortamda
+                // gorunmez) — SendToUserBySicilNoAsync'in dis catch'inden farkli olarak tb_Log'a hic
+                // dusmuyordu. WebPortal'dan (ChatHub.StartCall, SignalR hub cagrisi icinden) tetiklenen
+                // aramalarda burada SESSIZCE patlayip hicbir iz birakmiyordu — ayni HTTP path'ten
+                // (/call controller) cagrildiginda calistigi icin hic yakalanamamisti. Artik ayni
+                // guvenlik agi (yeni scope + LogPush) burada da var.
+                try
+                {
+                    using var errScope = _scopeFactory.CreateScope();
+                    var errContext = errScope.ServiceProvider.GetRequiredService<IYbsDbContext>();
+                    LogPush(errContext, "CALL-PUSH-ERROR", $"SendCallWakeAsync disaridaki catch'e dustu. SicilNo: {sicilNo}, Hata: {ex.GetType().FullName}: {ex.Message}, StackTrace: {ex.StackTrace}");
+                }
+                catch { }
             }
         }
 
@@ -88,6 +135,20 @@ namespace OyemCore.BusinessLayer.Services
                 {
                     var context = scope.ServiceProvider.GetRequiredService<IYbsDbContext>();
 
+                    // KESIN KURAL: pasif (Durum != true) kullaniciya HICBIR sekilde push gitmemeli —
+                    // token aramaya bile gerek yok, en basta kes. Merkezi burada yapiliyor ki her
+                    // Notify* metodu (Talep, Ticket, Izin, Akademi, ...) tek tek kontrol etmek zorunda kalmasin.
+                    var aliciDurum = await context.tb_Kullanici
+                        .AsNoTracking()
+                        .Where(u => u.SicilNo == sicilNo)
+                        .Select(u => (bool?)u.Durum)
+                        .FirstOrDefaultAsync();
+                    if (aliciDurum != true)
+                    {
+                        LogPush(context, "PUSH-NOT-SKIP-PASIF", $"SicilNo {sicilNo} pasif (veya bulunamadi) oldugu icin push gonderilmedi. Baslik: {title}");
+                        return;
+                    }
+
                     // tb_UserDevices bazı tenant veritabanlarında (ör. IşıkTarım) henüz yok — bu tabloyu
                     // sorgulamak SQL hatası fırlatıp SENDİRME İŞLEMİNİN TAMAMINI sessizce iptal ediyordu
                     // (tb_Kullanici.PushToken yedek yoluna hiç sıra gelmeden). Artık bu sorgu KENDİ
@@ -95,9 +156,17 @@ namespace OyemCore.BusinessLayer.Services
                     List<string> tokens;
                     try
                     {
+                        // KOK NEDEN: tb_UserDevices, gorunutulu arama (VoIP wake) icin native/ham cihaz
+                        // token'lari da (DeviceType: FcmVoip/ApnsVoipProduction/ApnsVoipSandbox) ayni
+                        // tabloda tutuyor — bunlar Expo formatinda DEGIL, normal push icin kullanilamaz.
+                        // Bu satirlar filtrelenmezse, kullanici VoIP'e kayit olur olmaz normal push'lari
+                        // (chat/talep/vs.) SessizCE bozuluyordu (2026-09-22'de canli tespit edildi).
                         tokens = await context.tb_UserDevices
                             .AsNoTracking()
-                            .Where(d => d.SicilNo == sicilNo)
+                            .Where(d => d.SicilNo == sicilNo
+                                        && d.DeviceType != "FcmVoip"
+                                        && d.DeviceType != "ApnsVoipProduction"
+                                        && d.DeviceType != "ApnsVoipSandbox")
                             .Select(d => d.PushToken)
                             .ToListAsync();
                     }
@@ -120,11 +189,20 @@ namespace OyemCore.BusinessLayer.Services
                         }
                     }
 
+                    if (tokens.Count == 0)
+                    {
+                        // "Push kaydi var ama telefona gelmiyor" sikayetinin en sessiz nedeni budur:
+                        // hedef kullanicinin ne tb_UserDevices'ta ne tb_Kullanici.PushToken'da KAYITLI
+                        // hicbir token'i yoktu — gonderilecek hicbir sey yok, ama bu durum daha once
+                        // hic loglanmiyordu.
+                        LogPush(context, "PUSH-NOT-ERROR", $"SicilNo {sicilNo} icin kayitli hicbir push token yok (tb_UserDevices ve tb_Kullanici.PushToken ikisi de bos). Baslik: {title}");
+                    }
+
                     foreach (var token in tokens)
                     {
                         if (!string.IsNullOrEmpty(token))
                         {
-                            await SendExpoNotificationAsync(token, title, body, data, channelId, context);
+                            await SendExpoNotificationAsync(token, title, body, data, channelId, context, sicilNo);
                         }
                     }
                 }
@@ -153,14 +231,25 @@ namespace OyemCore.BusinessLayer.Services
                         .AsNoTracking()
                         .FirstOrDefaultAsync(u => u.KullaniciID == kullaniciId);
 
+                    // KESIN KURAL: pasif kullaniciya push gitmemeli (bkz. SendToUserBySicilNoAsync'teki ayni kural).
+                    if (user != null && user.Durum != true)
+                    {
+                        LogPush(context, "PUSH-NOT-SKIP-PASIF", $"KullaniciID {kullaniciId} (SicilNo {user.SicilNo}) pasif oldugu icin push gonderilmedi. Baslik: {title}");
+                        return;
+                    }
+
                     if (user != null)
                     {
                         List<string> tokens;
                         try
                         {
+                            // bkz. SendToUserBySicilNoAsync'teki ayni VoIP-token filtreleme aciklamasi.
                             tokens = await context.tb_UserDevices
                                 .AsNoTracking()
-                                .Where(d => d.SicilNo == user.SicilNo)
+                                .Where(d => d.SicilNo == user.SicilNo
+                                            && d.DeviceType != "FcmVoip"
+                                            && d.DeviceType != "ApnsVoipProduction"
+                                            && d.DeviceType != "ApnsVoipSandbox")
                                 .Select(d => d.PushToken)
                                 .ToListAsync();
                         }
@@ -179,7 +268,7 @@ namespace OyemCore.BusinessLayer.Services
                         {
                             if (!string.IsNullOrEmpty(token))
                             {
-                                await SendExpoNotificationAsync(token, title, body, data, channelId, context);
+                                await SendExpoNotificationAsync(token, title, body, data, channelId, context, user.SicilNo);
                             }
                         }
                     }
@@ -207,6 +296,14 @@ namespace OyemCore.BusinessLayer.Services
                 string connStr = context.Database.GetConnectionString();
                 if (string.IsNullOrEmpty(connStr)) return;
 
+                // KOK NEDEN (2026-09-22'de bulundu): tb_Log.Cihaz nvarchar(10) — "backend-raw" (11
+                // karakter) bile bu siniri asiyordu, SQL Server "String or binary data would be
+                // truncated" hatasiyla INSERT'i tamamen reddediyordu. Bu yuzden LogPush BUGUNE KADAR
+                // canlida BIR KEZ BILE basarili yazmamisti (Cihaz='backend-raw' icin sifir satir).
+                // Konu/Aciklama de kolon sinirlarina (nvarchar(50)/(300)) gore guvenlik payiyla kesiliyor.
+                string konuSafe = string.IsNullOrEmpty(konu) ? konu : (konu.Length > 50 ? konu.Substring(0, 50) : konu);
+                string aciklamaSafe = string.IsNullOrEmpty(aciklama) ? aciklama : (aciklama.Length > 300 ? aciklama.Substring(0, 300) : aciklama);
+
                 using var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr);
                 conn.Open();
                 using var cmd = new Microsoft.Data.SqlClient.SqlCommand(
@@ -214,9 +311,9 @@ namespace OyemCore.BusinessLayer.Services
                     conn);
                 cmd.Parameters.AddWithValue("@SicilNo", "SYSTEM");
                 cmd.Parameters.AddWithValue("@Eposta", "system@oyemsoft.com");
-                cmd.Parameters.AddWithValue("@Konu", konu);
-                cmd.Parameters.AddWithValue("@Aciklama", (object)aciklama ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@Cihaz", "backend-raw");
+                cmd.Parameters.AddWithValue("@Konu", konuSafe);
+                cmd.Parameters.AddWithValue("@Aciklama", (object)aciklamaSafe ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Cihaz", "Backend");
                 cmd.Parameters.AddWithValue("@KayitTar", DateTime.Now);
                 cmd.ExecuteNonQuery();
             }
@@ -226,7 +323,7 @@ namespace OyemCore.BusinessLayer.Services
             }
         }
 
-        private async Task SendExpoNotificationAsync(string pushToken, string title, string body, object data, string channelId = null, IYbsDbContext context = null)
+        private async Task SendExpoNotificationAsync(string pushToken, string title, string body, object data, string channelId = null, IYbsDbContext context = null, string sicilNo = null)
         {
             if (!pushToken.StartsWith("ExponentPushToken["))
             {
@@ -237,29 +334,21 @@ namespace OyemCore.BusinessLayer.Services
 
             try
             {
-                // channelId Android'de hangi kanalın (ve dolayısıyla hangi zil sesinin) kullanılacağını
-                // belirler; iOS'ta "sound" alanı doğrudan bundle'lanmış ses dosyasının adını referans alır
-                // (native proje assets/sounds/incoming_call.wav'ı bu adla gömer — bkz. app.json expo-notifications
-                // plugin config). Kanalsız (normal mesaj) bildirimler eskisi gibi "default" sesi kullanır.
-                object payload = string.IsNullOrEmpty(channelId)
-                    ? new
-                    {
-                        to = pushToken,
-                        title = title,
-                        body = body,
-                        sound = "default",
-                        data = data
-                    }
-                    : (object)new
-                    {
-                        to = pushToken,
-                        title = title,
-                        body = body,
-                        sound = "incoming_call.wav",
-                        channelId = channelId,
-                        priority = "high",
-                        data = data
-                    };
+                // KARAR (2026-09-23): Arama push'u ozel bir kanal/ses/oncelik (channelId=incoming_call_v2,
+                // sound=incoming_call.wav, priority=high) kullaniyordu — Expo/APNs kabul edip receipt "ok"
+                // dese de gercek cihazda uygulama kapaliyken HICBIR ZAMAN banner olarak gorunmuyordu (uzun
+                // teshis: cihaz bildirim ayarlari dogru, payload manuel test edildiginde ayni yapida bile
+                // calisiyordu — kok neden kesinlesemedi). Kullanici karariyla arama push'u da TUM DIGER
+                // bildirimlerle AYNI, kanitlanmis guvenilir normal push yoluna alindi — ozel zil sesi/kanal
+                // kaldirildi. Bildirime dokununca yine de tam ekran CallRingOverlay aciliyor (data.type=="call").
+                object payload = new
+                {
+                    to = pushToken,
+                    title = title,
+                    body = body,
+                    sound = "default",
+                    data = data
+                };
 
                 // Türkçe karakterlerin bozulmadan gitmesi için gerçek UTF-8 JSON gönderilir
                 // (varsayılan encoder yerine UnsafeRelaxedJsonEscaping + explicit UTF-8 content).
@@ -305,12 +394,16 @@ namespace OyemCore.BusinessLayer.Services
                 else
                 {
                     _logger.LogInformation("PushNotificationService: Notification sent successfully to token {Token}", pushToken);
+                    // Basari da logluyoruz — "push kaydi var ama telefona gelmiyor" sikayetinde Expo'nun
+                    // ticket'i kabul ettigini (ID'siyle) gormek, sorunun Expo/APNs sonrasinda oldugunu
+                    // (cihaz/OS tarafi) kanitlamak icin sart. SicilNo burada kimin ALICI oldugunu gosterir.
+                    LogPush(context, "PUSH-NOT-OK", $"SicilNo: {sicilNo}, Baslik: {title}, Token: {pushToken}, ExpoResponse: {responseBody}");
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "PushNotificationService: SendExpoNotificationAsync failed for token {Token}", pushToken);
-                LogPush(context, "PUSH-NOT-ERROR", $"Exception: {ex.Message}, StackTrace: {ex.StackTrace}");
+                LogPush(context, "PUSH-NOT-ERROR", $"SicilNo: {sicilNo}, Exception: {ex.Message}, StackTrace: {ex.StackTrace}");
             }
         }
 
@@ -500,24 +593,6 @@ namespace OyemCore.BusinessLayer.Services
                     var talep = await context.tb_Talep.AsNoTracking().FirstOrDefaultAsync(t => t.TalepID == talepId);
                     if (talep == null) return;
 
-                    string companyCode = null;
-                    if (talep.TalepTurKodu == "BAKIM")
-                    {
-                        companyCode = await context.tb_TalepBakim
-                            .AsNoTracking()
-                            .Where(tb => tb.TalepKodu == talep.TalepKodu)
-                            .Select(tb => tb.SirketKodu)
-                            .FirstOrDefaultAsync();
-                    }
-                    else
-                    {
-                        companyCode = await context.tb_Personel
-                            .AsNoTracking()
-                            .Where(p => p.SicilNo == talep.KayitSicil)
-                            .Select(p => p.SirketKodu)
-                            .FirstOrDefaultAsync();
-                    }
-
                     var requesterName = await context.tb_Personel
                         .AsNoTracking()
                         .Where(p => p.SicilNo == talep.KayitSicil)
@@ -527,50 +602,41 @@ namespace OyemCore.BusinessLayer.Services
                     string tur = talep.TalepTurKodu.ToUpper();
                     List<string> targetSicilNos = new List<string>();
 
-                    if (talep.KategoriID.HasValue && !string.IsNullOrEmpty(companyCode))
+                    // Kullanicinin ACIKCA belirttigi kural (baska bir yorum/yedek yol EKLENMEDI):
+                    // - IT/ERP: tb_TalepAyar'da bu KATEGORIYE ait YoneticiMi=true olan HERKES —
+                    //   sirket kodu eslesmesi ARANMAZ.
+                    // - BAKIM: tb_TalepAyar'da bu KATEGORIYE ait YoneticiMi=true OLAN VE o kisinin
+                    //   tb_TalepAyar.SirketKodu'su, bu spesifik talebin tb_TalepBakim.SirketKodu'suyla
+                    //   ESLESEN kisiler.
+                    if (talep.KategoriID.HasValue)
                     {
-                        var talepAyarlar = await context.tb_TalepAyar
-                            .AsNoTracking()
-                            .Where(ta => ta.KategoriID == talep.KategoriID && ta.SirketKodu == companyCode)
-                            .ToListAsync();
-
-                        var yetkililer = talepAyarlar.Where(ta => ta.YoneticiMi == true).ToList();
-                        if (yetkililer.Any())
+                        if (tur == "BAKIM")
                         {
-                            targetSicilNos = yetkililer.Select(ta => ta.SicilNo).Distinct().ToList();
-                        }
-                        else if (talepAyarlar.Any())
-                        {
-                            targetSicilNos = talepAyarlar.Select(ta => ta.SicilNo).Distinct().ToList();
-                        }
-                    }
-
-                    if (!targetSicilNos.Any())
-                    {
-                        var companySicilAdminBelgeTur = await (from u in context.tb_Kullanici
-                                              join p in context.tb_Personel on u.SicilNo equals p.SicilNo
-                                              where p.SirketKodu == companyCode && u.AdminBelgeTur != null
-                                              select new { u.SicilNo, u.AdminBelgeTur })
-                                             .AsNoTracking()
-                                             .ToListAsync();
-                        var managers = companySicilAdminBelgeTur
-                            .Where(u => AdminBelgeTuruHelper.HasYetki(u.AdminBelgeTur, tur))
-                            .Select(u => u.SicilNo)
-                            .ToList();
-
-                        if (!managers.Any())
-                        {
-                            var allAdminBelgeTur = await context.tb_Kullanici
+                            string bakimSirketKodu = await context.tb_TalepBakim
                                 .AsNoTracking()
-                                .Where(u => u.AdminBelgeTur != null)
-                                .Select(u => new { u.SicilNo, u.AdminBelgeTur })
-                                .ToListAsync();
-                            managers = allAdminBelgeTur
-                                .Where(u => AdminBelgeTuruHelper.HasYetki(u.AdminBelgeTur, tur))
-                                .Select(u => u.SicilNo)
-                                .ToList();
+                                .Where(tb => tb.TalepKodu == talep.TalepKodu)
+                                .Select(tb => tb.SirketKodu)
+                                .FirstOrDefaultAsync();
+
+                            if (!string.IsNullOrEmpty(bakimSirketKodu))
+                            {
+                                targetSicilNos = await context.tb_TalepAyar
+                                    .AsNoTracking()
+                                    .Where(ta => ta.KategoriID == talep.KategoriID && ta.YoneticiMi == true && ta.SirketKodu == bakimSirketKodu)
+                                    .Select(ta => ta.SicilNo)
+                                    .Distinct()
+                                    .ToListAsync();
+                            }
                         }
-                        targetSicilNos = managers.Distinct().ToList();
+                        else
+                        {
+                            targetSicilNos = await context.tb_TalepAyar
+                                .AsNoTracking()
+                                .Where(ta => ta.KategoriID == talep.KategoriID && ta.YoneticiMi == true)
+                                .Select(ta => ta.SicilNo)
+                                .Distinct()
+                                .ToListAsync();
+                        }
                     }
 
                     var users = await context.tb_Kullanici
@@ -578,6 +644,15 @@ namespace OyemCore.BusinessLayer.Services
                         .Where(u => targetSicilNos.Contains(u.SicilNo))
                         .Select(u => new { u.SicilNo, u.Eposta })
                         .ToListAsync();
+
+                    // TESHIS: "push kaydi var ama telefona gelmiyor" sikayetinde asil bilinmeyen
+                    // hedef cozumlemesiydi — targetSicilNos bos/yanlis kisiye dusuyor olabilirdi,
+                    // bunu goremiyorduk. Artik cozumlenen liste (ve "yaratan" filtresinden once/sonra)
+                    // acikca loglaniyor.
+                    LogPush(context, "TALEP-PUSH-TARGET",
+                        $"TalepID: {talepId} ({talep.TalepKodu}), KayitSicil (yaratan): {talep.KayitSicil}, " +
+                        $"CozumlenenHedefler: [{string.Join(", ", targetSicilNos)}], " +
+                        $"tb_KullanicidaBulunanlar: [{string.Join(", ", users.Select(u => u.SicilNo))}]");
 
                     string typeLabel = tur == "BAKIM" ? "Bakım" : (tur == "ERP" ? "ERP" : "IT");
                     string title = $"Yeni {typeLabel} Talebi";
@@ -587,7 +662,11 @@ namespace OyemCore.BusinessLayer.Services
 
                     foreach (var u in users)
                     {
-                        if (u.SicilNo == talep.KayitSicil) continue; // Skip creator
+                        if (u.SicilNo == talep.KayitSicil)
+                        {
+                            LogPush(context, "TALEP-PUSH-SKIP", $"TalepID: {talepId}, SicilNo {u.SicilNo} yaratan oldugu icin atlandi.");
+                            continue; // Skip creator
+                        }
 
                         // 1. Push Bildirim Gönder
                         await SendToUserBySicilNoAsync(

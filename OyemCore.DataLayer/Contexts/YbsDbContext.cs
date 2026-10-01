@@ -74,6 +74,13 @@ namespace OyemCore.DataLayer.Contexts
         public DbSet<tb_AygitKategori> tb_AygitKategori { get; set; }
         public DbSet<tb_Marka> tb_Marka { get; set; }
         public DbSet<tb_AygitPersonel> tb_AygitPersonel { get; set; }
+        public DbSet<tb_DemirbasHurdaOnaylayici> tb_DemirbasHurdaOnaylayici { get; set; }
+        public DbSet<tb_AygitBakimTuru> tb_AygitBakimTuru { get; set; }
+        public DbSet<tb_DemirbasHurdaTalep> tb_DemirbasHurdaTalep { get; set; }
+        public DbSet<tb_DemirbasHurdaDosya> tb_DemirbasHurdaDosya { get; set; }
+        public DbSet<tb_DemirbasHurdaOnay> tb_DemirbasHurdaOnay { get; set; }
+        public DbSet<tb_AygitBakim> tb_AygitBakim { get; set; }
+        public DbSet<tb_AygitBakimDosya> tb_AygitBakimDosya { get; set; }
         public DbSet<tb_BakimPlanTemizlikOnay> tb_BakimPlanTemizlikOnay { get; set; }
         public DbSet<tb_Tedarikci> tb_Tedarikci { get; set; }
         public DbSet<tb_TedDeg> tb_TedDeg { get; set; }
@@ -214,6 +221,13 @@ namespace OyemCore.DataLayer.Contexts
             modelBuilder.Entity<tb_AygitKategori>().ToTable("tb_AygitKategori").HasKey(e => e.AygitKategoriID);
             modelBuilder.Entity<tb_Marka>().ToTable("tb_Marka").HasKey(e => e.MarkaID);
             modelBuilder.Entity<tb_AygitPersonel>().ToTable("tb_AygitPersonel").HasKey(e => e.AygitPersonelID);
+            modelBuilder.Entity<tb_DemirbasHurdaOnaylayici>().ToTable("tb_DemirbasHurdaOnaylayici").HasKey(e => e.OnaylayiciID);
+            modelBuilder.Entity<tb_AygitBakimTuru>().ToTable("tb_AygitBakimTuru").HasKey(e => e.TuruID);
+            modelBuilder.Entity<tb_DemirbasHurdaTalep>().ToTable("tb_DemirbasHurdaTalep").HasKey(e => e.HurdaTalepID);
+            modelBuilder.Entity<tb_DemirbasHurdaDosya>().ToTable("tb_DemirbasHurdaDosya").HasKey(e => e.DosyaID);
+            modelBuilder.Entity<tb_DemirbasHurdaOnay>().ToTable("tb_DemirbasHurdaOnay").HasKey(e => e.OnayID);
+            modelBuilder.Entity<tb_AygitBakim>().ToTable("tb_AygitBakim").HasKey(e => e.BakimID);
+            modelBuilder.Entity<tb_AygitBakimDosya>().ToTable("tb_AygitBakimDosya").HasKey(e => e.DosyaID);
             modelBuilder.Entity<tb_BakimPlanTemizlikOnay>().ToTable("tb_BakimPlanTemizlikOnay").HasKey(e => e.OnayID);
             modelBuilder.Entity<tb_Tedarikci>().ToTable("tb_Tedarikci").HasKey(e => e.TedarikciKodu);
             modelBuilder.Entity<tb_TedDeg>().ToTable("tb_TedDeg").HasKey(e => e.TedDegID);

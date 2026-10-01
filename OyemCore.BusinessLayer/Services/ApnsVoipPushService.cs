@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -9,6 +8,10 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OyemCore.BusinessLayer.Interfaces;
+using Org.BouncyCastle.Crypto;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.OpenSsl;
+using Org.BouncyCastle.Security;
 
 namespace OyemCore.BusinessLayer.Services
 {
@@ -37,18 +40,18 @@ namespace OyemCore.BusinessLayer.Services
             _bundleId = configuration["ApplePush:BundleId"];
         }
 
-        public async Task SendCallWakeAsync(string deviceToken, bool isProduction, string callerSicilNo, string callerName, string roomUrl, string callType, string callerImage)
+        public async Task<(bool Success, string Detail)> SendCallWakeAsync(string deviceToken, bool isProduction, string callerSicilNo, string callerName, string roomUrl, string callType, string callerImage)
         {
-            if (string.IsNullOrEmpty(deviceToken)) return;
+            if (string.IsNullOrEmpty(deviceToken)) return (false, "deviceToken bos.");
             if (string.IsNullOrEmpty(_keyPath) || string.IsNullOrEmpty(_keyId) || string.IsNullOrEmpty(_teamId) || string.IsNullOrEmpty(_bundleId))
             {
                 _logger.LogWarning("ApnsVoipPushService: ApplePush yapilandirmasi eksik, gonderim atlandi.");
-                return;
+                return (false, "ApplePush yapilandirmasi (KeyPath/KeyId/TeamId/BundleId) eksik.");
             }
             if (!File.Exists(_keyPath))
             {
                 _logger.LogWarning("ApnsVoipPushService: anahtar dosyasi bulunamadi ({KeyPath}), gonderim atlandi.", _keyPath);
-                return;
+                return (false, $"Anahtar dosyasi bulunamadi: {_keyPath}");
             }
 
             try
@@ -95,15 +98,20 @@ namespace OyemCore.BusinessLayer.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogError("ApnsVoipPushService: APNs gonderimi basarisiz. HTTP: {StatusCode}, Response: {Response}", response.StatusCode, responseBody);
+                    return (false, $"APNs HTTP {(int)response.StatusCode} ({(isProduction ? "production" : "sandbox")}, topic {_bundleId}.voip). Response: {responseBody}, token: {deviceToken.Substring(0, Math.Min(12, deviceToken.Length))}...");
                 }
                 else
                 {
                     _logger.LogInformation("ApnsVoipPushService: VoIP push gonderildi. SicilNo (arayan): {CallerSicilNo}", callerSicilNo);
+                    return (true, $"APNs {(isProduction ? "production" : "sandbox")} kabul etti (HTTP {(int)response.StatusCode}).");
                 }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "ApnsVoipPushService: SendCallWakeAsync basarisiz.");
+                // TEŞHİS: File.Exists(_keyPath) TRUE donuyor ama sonrasinda "dosya bulunamadi" hatasi
+                // aliniyordu (2026-09-22) — ex.Message tek basina yetersizdi, tam tip+stack ekleniyor.
+                return (false, $"Exception ({ex.GetType().FullName}): {ex.Message} | CWD: {Directory.GetCurrentDirectory()} | KeyPath: {_keyPath} | Stack: {ex.StackTrace?.Substring(0, Math.Min(200, ex.StackTrace.Length))}");
             }
         }
 
@@ -125,15 +133,27 @@ namespace OyemCore.BusinessLayer.Services
                 string payloadB64 = Base64UrlEncode(JsonSerializer.SerializeToUtf8Bytes(payload));
                 string signingInput = $"{headerB64}.{payloadB64}";
 
-                using var ecdsa = ECDsa.Create();
-                ecdsa.ImportFromPem(File.ReadAllText(_keyPath));
+                // KOK NEDEN (2026-09-22): System.Security.Cryptography.ECDsa, Windows'ta CNG
+                // uzerinden calisiyor — bu da IIS Application Pool'un "Load User Profile" ayari
+                // acik olmadan CryptographicException ("dosya bulunamadi") firlatiyordu. Paylasimli
+                // hosting'lerde bu ayara erisim genelde yok. BouncyCastle, Windows CNG'ye hic
+                // dokunmayan, saf yonetilen (managed) bir kripto kutuphanesi — ayni sorunu asla
+                // yasamaz. "PLAIN-ECDSA" imzalayici, JWT ES256'nin gerektirdigi ham IEEE P1363
+                // ("r || s" sabit uzunluk) formatini DOGRUDAN uretir — DER'den donusum gerekmez.
+                ECPrivateKeyParameters privateKey;
+                using (var reader = new StringReader(File.ReadAllText(_keyPath)))
+                {
+                    var pemReader = new PemReader(reader);
+                    object pemObject = pemReader.ReadObject();
+                    privateKey = pemObject as ECPrivateKeyParameters
+                        ?? ((AsymmetricCipherKeyPair)pemObject).Private as ECPrivateKeyParameters;
+                }
 
-                // JWT (RFC 7518) ES256 imzası "r || s" ham (IEEE P1363) formatında olmalı —
-                // .NET'in varsayılan DER/ASN.1 formatı Apple tarafından reddedilir.
-                byte[] signature = ecdsa.SignData(
-                    Encoding.UTF8.GetBytes(signingInput),
-                    HashAlgorithmName.SHA256,
-                    DSASignatureFormat.IeeeP1363FixedFieldConcatenation);
+                var signer = SignerUtilities.GetSigner("SHA256withPLAIN-ECDSA");
+                signer.Init(true, privateKey);
+                byte[] signingInputBytes = Encoding.UTF8.GetBytes(signingInput);
+                signer.BlockUpdate(signingInputBytes, 0, signingInputBytes.Length);
+                byte[] signature = signer.GenerateSignature();
 
                 string signatureB64 = Base64UrlEncode(signature);
 

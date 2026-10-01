@@ -9,6 +9,9 @@ namespace OyemCore.BusinessLayer.Interfaces
     public interface IApnsVoipPushService
     {
         // isProduction: tb_UserDevices.DeviceType == "ApnsVoipProduction" ise true, "ApnsVoipSandbox" ise false.
-        Task SendCallWakeAsync(string deviceToken, bool isProduction, string callerSicilNo, string callerName, string roomUrl, string callType, string callerImage);
+        // Donus degeri: normal ILogger ciktisi bu ortamda gorunur/erisilebilir degildi (bkz.
+        // PushNotificationService.LogPush) — cagiran taraf (PushNotificationService) sonucu
+        // tb_Log'a yazabilsin diye basari/detay burada acikca donduruluyor.
+        Task<(bool Success, string Detail)> SendCallWakeAsync(string deviceToken, bool isProduction, string callerSicilNo, string callerName, string roomUrl, string callType, string callerImage);
     }
 }

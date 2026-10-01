@@ -8,6 +8,6 @@ namespace OyemCore.BusinessLayer.Interfaces
     // force-quit durumunda güvenilir şekilde uyandıramaz, bu servis onun yerini almaz, tamamlar.
     public interface IFcmVoipPushService
     {
-        Task SendCallWakeAsync(string fcmToken, string callerSicilNo, string callerName, string roomUrl, string callType, string callerImage);
+        Task<(bool Success, string Detail)> SendCallWakeAsync(string fcmToken, string callerSicilNo, string callerName, string roomUrl, string callType, string callerImage);
     }
 }
